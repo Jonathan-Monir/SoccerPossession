@@ -126,6 +126,7 @@ def process_video(yolo_path, video_path, fps):
 
     # Process each frame
     for i, frame in enumerate(video):
+        print(type(frame))
         # Object Detection
         ball_detections = ru.get_detections(
             yolo_detector, frame, class_id=0, confidence_threshold=0.3
