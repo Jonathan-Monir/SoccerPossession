@@ -1,4 +1,3 @@
-
 import cv2
 import numpy as np
 import os
@@ -21,6 +20,7 @@ def show_cropped_frame(crop, window_name='Cropped Frame'):
     cv2.imshow(window_name, crop)
     cv2.waitKey(0)  # Wait for a key press
     cv2.destroyAllWindows()  # Close the window
+
 # -------------------------
 # Feature Extraction
 # -------------------------
@@ -69,12 +69,6 @@ def calculate_color_distance(color1, color2):
     v_dist = abs(hsv1[2] - hsv2[2]) / 255.0
     hsv_dist = np.sqrt(4 * h_dist ** 2 + s_dist ** 2 + v_dist ** 2)
     return 0.5 * rgb_dist + 0.5 * hsv_dist * 255
-
-import cv2
-import numpy as np
-
-import cv2
-import numpy as np
 
 def apply_masking(crop):
     try:
@@ -131,8 +125,6 @@ def apply_masking(crop):
     except Exception as e:
         print(f"Error occurred: {e}")
 
-
-
 def extract_dominant_colors(crop, n_colors=3, debug=False):
     pixels = apply_masking(crop)
     if debug:
@@ -144,7 +136,6 @@ def extract_dominant_colors(crop, n_colors=3, debug=False):
         center_crop = crop[h // 4 : 3 * h // 4, w // 4 : 3 * w // 4]
         pixels = center_crop.reshape(-1, 3)
     
-
     # Use MiniBatchKMeans for speed
     kmeans = MiniBatchKMeans(n_clusters=n_colors, random_state=22, batch_size=512, max_iter=300)
     kmeans.fit(pixels)
@@ -218,16 +209,11 @@ def visualize_extraction(crop, filtered_colors):
 # Clustering and Classification
 # -------------------------
 def classify_players_by_features(player_features, n_teams=2):
-
     start_time = time.perf_counter()
-
     kmeans = MiniBatchKMeans(n_clusters=n_teams, random_state=42, batch_size=512)
     labels = kmeans.fit_predict(player_features)
-
     end_time = time.perf_counter()
     clustering_time = end_time - start_time
-
-
     print(f"MiniBatchKMeans 2 took {clustering_time:.4f} seconds")
     return labels
 
@@ -296,20 +282,18 @@ def multi_frame_cluster(results, model=None, norfair=False):
             for box in player_detections:
                 if norfair:
                     cls, x1, y1, x2, y2 = box
-
                 else:
                     _, x1, y1, x2, y2 = box
 
                 x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
                 crop = frame[y1:y2, x1:x2]
-#                 show_cropped_frame(crop)
                 if crop.size == 0:
                     continue
                 feat = extract_deep_features(crop, model)
                 all_features.append(feat)
                 features_info.append((frame_idx, box))
         else:
-            player_colors, _ = extract_player_colors(frame, player_detections,norfair)
+            player_colors, _ = extract_player_colors(frame, player_detections, norfair)
             for colors, box in player_colors:
                 feat = np.array(colors).flatten()
                 all_features.append(feat)
@@ -335,7 +319,7 @@ def multi_frame_cluster(results, model=None, norfair=False):
 # -------------------------
 # Extract Player Colors
 # -------------------------
-def extract_player_colors(image, bounding_boxes,norfair=True):
+def extract_player_colors(image, bounding_boxes, norfair=True):
     player_colors = []
     other_boxes = []
     if image is None:
@@ -346,13 +330,11 @@ def extract_player_colors(image, bounding_boxes,norfair=True):
     for box in bounding_boxes:
         if norfair:
             cls, x1, y1, x2, y2 = box
-        
         else:
             cls, x1, x2, y1, y2 = box
         x1, x2, y1, y2 = map(int, [x1, x2, y1, y2])
         if cls in range(1, 6):  # Only process player boxes
             crop = image_rgb[y1:y2, x1:x2]
-#             show_cropped_frame(crop)
             if crop.size == 0:
                 print("Error: Crop size = 0")
                 continue
@@ -386,14 +368,15 @@ def process_frame(frame_idx, frame, ball_detections, updated_boxes, debug):
     if debug:
         print(f"extract_player_colors for frame {frame_idx} took {end_color - start_color:.4f} seconds")
     
+    # Here we create team_labels based on updated_boxes.
+    # In multi_frame_cluster, players got labels 1 or 2.
+    # We map these to 0 (team1) and 1 (team2) for aggregation.
     team_labels = []
     for box in updated_boxes:
         if box[0] in [1, 2]:
-            team_labels.append(box[0] if box[0] > 2 else box[0] - 1)
+            team_labels.append(0 if box[0] == 1 else 1)
     
     end_frame_proc = time.perf_counter()
-#     if debug:
-#         print(f"Total processing for frame {frame_idx} took {end_frame_proc - start_frame_proc:.4f} seconds")
     return frame_idx, player_colors, team_labels, other_boxes
 
 # -------------------------
@@ -401,7 +384,7 @@ def process_frame(frame_idx, frame, ball_detections, updated_boxes, debug):
 # -------------------------
 def main_multi_frame(results=None, debug=False):
     norfair = True
-    if results == None:
+    if results is None:
         norfair = False
         start_total = time.perf_counter()
         results = []
@@ -432,12 +415,13 @@ def main_multi_frame(results=None, debug=False):
         print(f"Model initialization took {end_model - start_model:.4f} seconds")
     
     start_cluster = time.perf_counter()
+    # Note: In this example we set model=None so that color features (via extract_dominant_colors) are used.
     updated_results = multi_frame_cluster(results, model=None, norfair=norfair)
     end_cluster = time.perf_counter()
     if debug:
         print(f"Multi-frame clustering took {end_cluster - start_cluster:.4f} seconds")
     
-    # Process each frame in parallel
+    # Process each frame in parallel and also collect team color information.
     processed_frames = {}
     with ThreadPoolExecutor() as executor:
         futures = []
@@ -447,14 +431,36 @@ def main_multi_frame(results=None, debug=False):
             frame_idx, player_colors, team_labels, other_boxes = future.result()
             processed_frames[frame_idx] = (player_colors, team_labels, other_boxes)
     
-    end_total = time.perf_counter()
-    if debug:
-        print(f"Total main_multi_frame execution time: {end_total - start_total:.4f} seconds")
-    return updated_results
-
+    # Aggregate dominant colors for each team from all frames.
+    team1_colors = []
+    team2_colors = []
+    for frame_idx in sorted(processed_frames.keys()):
+        player_colors, team_labels, _ = processed_frames[frame_idx]
+        # Assume that player_colors list and team_labels list are aligned.
+        for (colors, _), label in zip(player_colors, team_labels):
+            # Use the most dominant color (first element of colors).
+            if label == 0:
+                team1_colors.append(colors[0])
+            elif label == 1:
+                team2_colors.append(colors[0])
+    
+    if team1_colors:
+        team1_color = tuple(np.mean(team1_colors, axis=0).astype(int))
+    else:
+        team1_color = (0, 0, 0)
+    if team2_colors:
+        team2_color = tuple(np.mean(team2_colors, axis=0).astype(int))
+    else:
+        team2_color = (0, 0, 0)
+    
+    print(f"Team 1 color (BGR): {team1_color}")
+    print(f"Team 2 color (BGR): {team2_color}")
+    
+    return updated_results, team1_color, team2_color
 
 # Example usage:
-# final_results = multi_frame_cluster(results, model)
 if __name__ == '__main__':
-    results_with_class_ids = main_multi_frame(debug=True)
+    results_with_class_ids, team1_color, team2_color = main_multi_frame(debug=True)
     print("Multi-frame clustering complete. Processed results returned.")
+    print("Team 1 Color (BGR):", team1_color)
+    print("Team 2 Color (BGR):", team2_color)
