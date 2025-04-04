@@ -184,6 +184,7 @@ class Converter:
         ]
 
         detections = []
+        nor_detections = []
 
         for tracked_object in live_objects:
             detection = tracked_object.last_detection
@@ -193,5 +194,8 @@ class Converter:
                 x2, y2 = points[1]
                 detections.append([cls, x1, y1, x2, y2])
 
-        return detections
+            detection.data["id"] = int(tracked_object.id)
+            nor_detections.append(detection)
+
+        return detections, nor_detections
 

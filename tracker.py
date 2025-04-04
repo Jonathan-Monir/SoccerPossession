@@ -57,6 +57,7 @@ def process_video(yolo_path, video_path, fps):
     # List to store each frame with its detections
     results = []
 
+    nor_ball_detections = []
     # Process each frame
     for i, frame in enumerate(video):
     # Compute noise level
@@ -89,13 +90,14 @@ def process_video(yolo_path, video_path, fps):
         )
 
         # Convert tracked objects back to detection format
-        player_detections = Converter.TrackedObjects_to_Detections(player_track_objects,cls=1)
-        ball_detections = Converter.TrackedObjects_to_Detections(ball_track_objects,cls=0)
+        player_detections, _ = Converter.TrackedObjects_to_Detections(player_track_objects,cls=1)
+        ball_detections, nor_ball_detection = Converter.TrackedObjects_to_Detections(ball_track_objects,cls=0)
 
         # Append current frame and detections to results
+        nor_ball_detections.append(nor_ball_detection)
         results.append((frame, ball_detections, player_detections))
 
-    return results
+    return results, coord_transformations, nor_ball_detections
 
 if __name__ == "__main__":
     process_video("yolo8.pt","jooooooooo.mp4",30)

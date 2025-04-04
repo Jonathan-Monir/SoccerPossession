@@ -471,6 +471,7 @@ class PathPoint:
         tuple
             Center of the bounding box (x, y)
         """
+        print(f"bounding_box, {bounding_box}")
         return (
             int((bounding_box[0][0] + bounding_box[1][0]) / 2),
             int((bounding_box[0][1] + bounding_box[1][1]) / 2),
