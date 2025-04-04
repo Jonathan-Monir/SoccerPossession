@@ -70,29 +70,68 @@ def calculate_color_distance(color1, color2):
     hsv_dist = np.sqrt(4 * h_dist ** 2 + s_dist ** 2 + v_dist ** 2)
     return 0.5 * rgb_dist + 0.5 * hsv_dist * 255
 
+import cv2
+import numpy as np
+
+import cv2
+import numpy as np
+
 def apply_masking(crop):
-    hsv_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
-    lower_green = np.array([35, 30, 30])
-    upper_green = np.array([85, 255, 255])
-    green_mask = cv2.inRange(hsv_crop, lower_green, upper_green)
-    field_sample = hsv_crop[hsv_crop.shape[0] // 2:, :, :]
-    field_hue = np.median(field_sample[:, :, 0])
-    field_lower = np.array([max(0, field_hue - 10), 30, 30])
-    field_upper = np.array([min(180, field_hue + 10), 255, 255])
-    field_mask = cv2.inRange(hsv_crop, field_lower, field_upper)
-    ground_mask = cv2.bitwise_or(green_mask, field_mask)
-    player_mask = cv2.bitwise_not(ground_mask)
-    lower_uniform = np.array([0, 30, 40])
-    upper_uniform = np.array([180, 255, 255])
-    color_mask = cv2.inRange(hsv_crop, lower_uniform, upper_uniform)
-    final_mask = cv2.bitwise_and(player_mask, color_mask)
-    kernel = np.ones((3, 3), np.uint8)
-    final_mask = cv2.morphologyEx(final_mask, cv2.MORPH_OPEN, kernel)
-    final_mask = cv2.morphologyEx(final_mask, cv2.MORPH_CLOSE, kernel)
-    masked_crop = cv2.bitwise_and(crop, crop, mask=final_mask)
-    pixels = masked_crop.reshape((-1, 3))
-    pixels = pixels[np.any(pixels != 0, axis=1)]
-    return pixels
+    try:
+        # Convert image to HSV
+        hsv_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+
+        # Define green range and create mask
+        lower_green = np.array([35, 30, 30], dtype=np.uint8)
+        upper_green = np.array([85, 255, 255], dtype=np.uint8)
+        green_mask = cv2.inRange(hsv_crop, lower_green, upper_green)
+
+        # Extract a field sample and calculate median hue
+        field_sample = hsv_crop[hsv_crop.shape[0] // 2:, :, :]
+
+        # Ensure the median hue is an integer within [0, 180]
+        field_hue = int(np.median(field_sample[:, :, 0]))
+        field_hue = np.clip(field_hue, 0, 180)  # Ensure within valid range
+
+        # Define dynamic field range and ensure uint8 type
+        field_lower = np.array([max(0, field_hue - 10), 30, 30], dtype=np.uint8)
+        field_upper = np.array([min(180, field_hue + 10), 255, 255], dtype=np.uint8)
+
+        # Apply field mask
+        field_mask = cv2.inRange(hsv_crop, field_lower, field_upper)
+
+        # Create ground mask
+        ground_mask = cv2.bitwise_or(green_mask, field_mask)
+
+        # Create player mask
+        player_mask = cv2.bitwise_not(ground_mask)
+
+        # Apply color-based filtering
+        lower_uniform = np.array([0, 30, 40], dtype=np.uint8)
+        upper_uniform = np.array([180, 255, 255], dtype=np.uint8)
+        color_mask = cv2.inRange(hsv_crop, lower_uniform, upper_uniform)
+
+        # Final mask after filtering
+        final_mask = cv2.bitwise_and(player_mask, color_mask)
+
+        # Apply morphological operations
+        kernel = np.ones((3, 3), np.uint8)
+        final_mask = cv2.morphologyEx(final_mask, cv2.MORPH_OPEN, kernel)
+        final_mask = cv2.morphologyEx(final_mask, cv2.MORPH_CLOSE, kernel)
+
+        # Apply mask to the crop
+        masked_crop = cv2.bitwise_and(crop, crop, mask=final_mask)
+
+        # Extract nonzero pixels
+        pixels = masked_crop.reshape((-1, 3))
+        pixels = pixels[np.any(pixels != 0, axis=1)]
+
+        return pixels
+
+    except Exception as e:
+        print(f"Error occurred: {e}")
+
+
 
 def extract_dominant_colors(crop, n_colors=3, debug=False):
     pixels = apply_masking(crop)
