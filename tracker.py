@@ -6,7 +6,8 @@ from ultralytics import YOLO
 from norfair import Tracker
 from norfair.camera_motion import MotionEstimator
 from norfair.distances import mean_euclidean
-
+from preprosses import compute_noise,apply_nlm_denoising
+import torch
 from norfair import Tracker, Video
 from tracking.inference.converter import Converter
 # from tracking.inference import Converter
@@ -40,74 +41,6 @@ def delete_file(file_path):
     else:
         print(f"File not found: {file_path}")
 
-def delete_folder_contents(folder: str) -> None:
-    """
-    Deletes all files and subdirectories in the specified folder.
-
-    Parameters:
-        folder (str): The path to the folder whose contents will be deleted.
-    """
-    # Check if the folder exists
-    if not os.path.exists(folder):
-        print(f"The folder '{folder}' does not exist.")
-        return
-
-    # Iterate through each item in the folder
-    for item in os.listdir(folder):
-        item_path = os.path.join(folder, item)
-        try:
-            # Remove file or symbolic link
-            if os.path.isfile(item_path) or os.path.islink(item_path):
-                os.unlink(item_path)
-            # Remove directory and its contents
-            elif os.path.isdir(item_path):
-                shutil.rmtree(item_path)
-        except Exception as e:
-            print(f"Failed to delete '{item_path}'. Reason: {e}")
-
-"""## Video extraction"""
-def extract_frames(video_path, output_dir, fps, start_second=0, end_second=-1):
-    """Extracts frames from a video file within a specified time range and saves them to an output directory.
-
-    Args:
-        video_path (str): Path to the video file.
-        output_dir (str): Path to the output directory.
-        fps (int): Desired frames per second.
-        start_second (int): Starting second to extract frames from.
-        end_second (int): Ending second to extract frames until (-1 for full video).
-    """
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    delete_folder_contents(output_dir)
-    cap = cv2.VideoCapture(video_path)
-    video_fps = int(cap.get(cv2.CAP_PROP_FPS))
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration = total_frames / video_fps
-
-    if end_second == -1 or end_second > duration:
-        end_second = duration
-
-    start_frame = int(start_second * video_fps)
-    end_frame = int(end_second * video_fps)
-
-    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-
-    frame_count = start_frame
-    while frame_count < end_frame:
-        ret, frame = cap.read()
-
-        if not ret:
-            break
-
-        if (frame_count - start_frame) % int(video_fps / fps) == 0:
-            cv2.imwrite(os.path.join(output_dir, f'frame_{frame_count}.jpg'), frame)
-
-        frame_count += 1
-
-    cap.release()
-
-# extract_frames(video_path, output_dir, fps)
-
 def process_video(yolo_path, video_path, fps):
     # Initialize YOLO detector with the given model path
     yolo_detector = YOLO(yolo_path)
@@ -126,7 +59,13 @@ def process_video(yolo_path, video_path, fps):
 
     # Process each frame
     for i, frame in enumerate(video):
-        print(type(frame))
+    # Compute noise level
+        noise_level = compute_noise(frame)
+        print(f"Frame {i}: Noise Level = {noise_level:.2f}")
+
+    # Apply denoising
+        if(noise_level > 60):
+            frame = apply_nlm_denoising(frame)
         # Object Detection
         ball_detections = ru.get_detections(
             yolo_detector, frame, class_id=0, confidence_threshold=0.3
@@ -159,4 +98,4 @@ def process_video(yolo_path, video_path, fps):
     return results
 
 if __name__ == "__main__":
-    process_video("yolo8.pt","manc.mp4",30)
+    process_video("yolo8.pt","jooooooooo.mp4",30)

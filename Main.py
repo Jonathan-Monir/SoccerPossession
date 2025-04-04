@@ -1,18 +1,29 @@
 import json
+import time
 from tracker import process_video
 from cluster_time_improve import main_multi_frame
 from transformation import process_field_transformation
 from possessionCalculation import CaculatePossession
+import warnings
+from videoDraw import draw_bounding_boxes_on_frames , save_video_from_frames
+warnings.filterwarnings("ignore")
+
+def measure_time(func, *args, process_name="Process"):
+    """Helper function to measure execution time."""
+    start_time = time.time()
+    result = func(*args)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"{process_name} completed in {elapsed_time:.4f} seconds")
+    return result
 
 # TRACKING
-results = process_video(r"resources\yolo8.pt", r"resources\manc2.mp4", 20)
-print("Tracking completed")
+results = measure_time(process_video, r"resources\yolo8.pt", r"resources\jooooooooo.mp4", 20, process_name="Tracking")
 
-# CLUSTER
-results_with_class_ids = main_multi_frame(results)
-print("Clustering completed")
+# CLUSTERING
+results_with_class_ids = measure_time(main_multi_frame, results, process_name="Clustering")
 
-# The calibration configuration paths and thresholds.
+# Calibration configuration
 calibrator_cfgs = {
     "cfg_path": r"Transformation/config/hrnetv2_w48.yaml",
     "cfg_line_path": r"Transformation/config/hrnetv2_w48_l.yaml",
@@ -22,15 +33,20 @@ calibrator_cfgs = {
     "line_threshold": 0.3880
 }
 
-# FEILD TRANSFORMATION
-results = process_field_transformation(results_with_class_ids, calibrator_cfgs)
+# FIELD TRANSFORMATION
+results = measure_time(process_field_transformation, results_with_class_ids, calibrator_cfgs, process_name="Field Transformation")
 
-
-
+# POSSESSION CALCULATION
 yardTL, yardTR, yardBL, yardBR = [29.0, 17.0], [45.5, 17.0], [29.0, 26.0], [45.5, 26.0]
-poss = CaculatePossession(results, yardTL, yardTR, yardBL, yardBR)
-print(poss)
+poss = measure_time(CaculatePossession, results, yardTL, yardTR, yardBL, yardBR, process_name="Possession Calculation")
 
+print("Possession Results:", poss)
+
+visualize = draw_bounding_boxes_on_frames(results_with_class_ids)
+
+save_video_from_frames(visualize, output_path="detection_results.mp4")
+
+# Optional: Save results to a JSON file
 # json_output_path = r"results_field_transformed.json"
 # with open(json_output_path, "w") as f:
 #     json.dump(results, f, indent=4)
