@@ -2,10 +2,10 @@
 import numpy as np
 import PIL
 
-from soccer.ball import Ball
-from soccer.draw import AbsolutePath, PathPoint
-from soccer.player import Player
-from soccer.team import Team
+from ..soccer.ball import Ball
+from ..soccer.draw import AbsolutePath, PathPoint
+from ..soccer.player import Player
+from ..soccer.team import Team
 
 from typing import Iterable, List
 

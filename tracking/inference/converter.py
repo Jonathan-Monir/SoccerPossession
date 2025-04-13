@@ -161,6 +161,37 @@ class Converter:
         return df
 
     @staticmethod
+    def TrackedObjects_to_Detections_nor(
+            tracked_objects: List[norfair.tracker.TrackedObject], cls
+        ) -> List[norfair.Detection]:
+            """
+            Converts a list of norfair.tracker.TrackedObject to a list of norfair.Detection
+
+            Parameters
+            ----------
+            tracked_objects : List[norfair.tracker.TrackedObject]
+                List of norfair.tracker.TrackedObject
+
+            Returns
+            -------
+            List[norfair.Detection]
+                List of norfair.Detection
+            """
+
+            live_objects = [
+                entity for entity in tracked_objects if entity.live_points.any()
+            ]
+
+            detections = []
+
+            for tracked_object in live_objects:
+                detection = tracked_object.last_detection
+                detection.data["id"] = int(tracked_object.id)
+                detections.append(detection)
+
+            return detections
+
+    @staticmethod
     
     def TrackedObjects_to_Detections(
             tracked_objects: List[norfair.tracker.TrackedObject],cls: int

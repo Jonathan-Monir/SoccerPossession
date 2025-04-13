@@ -4,11 +4,11 @@ import cv2
 import numpy as np
 import PIL
 
-from soccer.ball import Ball
-from soccer.draw import Draw
-from soccer.pass_event import Pass, PassEvent
-from soccer.player import Player
-from soccer.team import Team
+from ..soccer.ball import Ball
+from ..soccer.draw import Draw
+from ..soccer.pass_event import Pass, PassEvent
+from ..soccer.player import Player
+from ..soccer.team import Team
 
 
 class Match:

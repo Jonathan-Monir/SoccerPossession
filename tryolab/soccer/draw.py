@@ -1,6 +1,7 @@
 from math import sqrt
 from typing import List
 
+from PIL import ImageDraw, ImageFont, Image
 import norfair
 import numpy as np
 import PIL
@@ -358,16 +359,18 @@ class Draw:
             )
         return overlay
 
+    
+
     @staticmethod
     def text_in_middle_rectangle(
-        img: PIL.Image.Image,
-        origin: tuple,
-        width: int,
-        height: int,
-        text: str,
-        font: PIL.ImageFont = None,
-        color=(255, 255, 255),
-    ) -> PIL.Image.Image:
+            img: Image.Image,
+            origin: tuple,
+            width: int,
+            height: int,
+            text: str,
+            font: ImageFont.ImageFont = None,
+            color=(255, 255, 255),
+        ) -> Image.Image:
         """
         Draw text in middle of rectangle
 
@@ -394,15 +397,20 @@ class Draw:
             Image with the text drawn
         """
 
-        draw = PIL.ImageDraw.Draw(img)
+        from PIL import Image, ImageDraw, ImageFont
+        draw = ImageDraw.Draw(img)
 
         if font is None:
-            font = PIL.ImageFont.truetype("fonts/Gidole-Regular.ttf", size=24)
+            font = ImageFont.truetype("fonts/Gidole-Regular.ttf", size=24)
 
-        w, h = draw.textsize(text, font=font)
+        # Get bounding box of the text
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+
         text_origin = (
-            origin[0] + width / 2 - w / 2,
-            origin[1] + height / 2 - h / 2,
+            origin[0] + (width - text_width) / 2,
+            origin[1] + (height - text_height) / 2,
         )
 
         draw.text(text_origin, text, font=font, fill=color)
@@ -522,6 +530,7 @@ class PathPoint:
             PathPoint
         """
 
+        print(f"point: {abs_point}")
         rel_point = coord_transformations.abs_to_rel(abs_point)
         center = PathPoint.get_center_from_bounding_box(rel_point)
 

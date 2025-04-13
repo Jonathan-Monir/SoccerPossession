@@ -5,9 +5,9 @@ import numpy as np
 import PIL
 from norfair import Detection
 
-from soccer.ball import Ball
-from soccer.draw import Draw
-from soccer.team import Team
+from ..soccer.ball import Ball
+from ..soccer.draw import Draw
+from ..soccer.team import Team
 
 
 class Player:
@@ -240,6 +240,7 @@ class Player:
         frame: PIL.Image.Image,
         confidence: bool = False,
         id: bool = False,
+        teams=False
     ) -> PIL.Image.Image:
         """
         Draw all players on the frame

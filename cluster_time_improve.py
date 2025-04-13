@@ -300,48 +300,80 @@ def multi_frame_cluster(results, model=None, norfair=False):
                 features_info.append((frame_idx, box))
     
     all_features = np.array(all_features)
-    team_labels_global = classify_players_by_features(all_features, n_teams=2)
-    
-    new_player_detections = {i: [] for i in range(len(results))}
-    for global_idx, label in enumerate(team_labels_global):
-        frame_idx, original_box = features_info[global_idx]
-        new_label = label + 1  # Map label to team IDs (0 reserved for ball)
-        new_box = [new_label] + original_box[1:]
-        new_player_detections[frame_idx].append(new_box)
-    
-    final_results = []
-    for idx, (frame, ball_detections, _) in enumerate(results):
-        updated_boxes = new_player_detections.get(idx, []) + ball_detections
-        updated_boxes.sort(key=lambda x: (x[0], x[1], x[2], x[3], x[4]))
-        final_results.append((frame, ball_detections, updated_boxes))
+    if all_features:
+        team_labels_global = classify_players_by_features(all_features, n_teams=2)
+        
+        new_player_detections = {i: [] for i in range(len(results))}
+        for global_idx, label in enumerate(team_labels_global):
+            frame_idx, original_box = features_info[global_idx]
+            new_label = label + 1  # Map label to team IDs (0 reserved for ball)
+            new_box = [new_label] + original_box[1:]
+            new_player_detections[frame_idx].append(new_box)
+        
+        final_results = []
+        for idx, (frame, ball_detections, _) in enumerate(results):
+            updated_boxes = new_player_detections.get(idx, []) + ball_detections
+            updated_boxes.sort(key=lambda x: (x[0], x[1], x[2], x[3], x[4]))
+            final_results.append((frame, ball_detections, updated_boxes))
+    else:
+        final_results = [(frame, None, None)]
     return final_results
 
 # -------------------------
 # Extract Player Colors
 # -------------------------
-def extract_player_colors(image, bounding_boxes, norfair=True):
+
+def extract_player_colors(image, detections, norfair=True):
     player_colors = []
     other_boxes = []
+
     if image is None:
-        print("Error: Could not load image.")
-        return
+        print(" Error: Could not load image.")
+        return [], []
+
+    if detections is None or not isinstance(detections, list):
+        print(" Warning: Detections is None or not a list.")
+        return [], []
+
     # Convert once at the beginning
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    for box in bounding_boxes:
+
+    for det in detections:
         if norfair:
-            cls, x1, y1, x2, y2 = box
+            # Norfair detection: det.points is a list of keypoints (usually 1 point for tracking)
+            if len(det.points[0]) != 2:
+                print("Invalid detection points structure.")
+                continue
+
+            x_center, y_center = det.points[0]
+
+            # Estimate box from center (customize based on your player size)
+            width, height = 50, 100
+            x1 = int(x_center - width // 2)
+            y1 = int(y_center - height // 2)
+            x2 = int(x_center + width // 2)
+            y2 = int(y_center + height // 2)
+
+            # Class label: you *must* be setting this elsewhere in your pipeline!
+            cls = getattr(det, 'label', 1)  # Default to class 1 (player)
         else:
-            cls, x1, x2, y1, y2 = box
-        x1, x2, y1, y2 = map(int, [x1, x2, y1, y2])
-        if cls in range(1, 6):  # Only process player boxes
+            # Original YOLO-style box: (cls, x1, x2, y1, y2)
+            cls, x1, x2, y1, y2 = det
+
+        # Clamp values to image size
+        x1, x2 = max(0, x1), min(image.shape[1], x2)
+        y1, y2 = max(0, y1), min(image.shape[0], y2)
+
+        if cls in range(1, 6):  # Only process player classes
             crop = image_rgb[y1:y2, x1:x2]
             if crop.size == 0:
-                print("Error: Crop size = 0")
+                print(f"Skipped zero-size crop for box: {x1},{y1},{x2},{y2}")
                 continue
             dominant_colors = extract_dominant_colors(crop)
-            player_colors.append((dominant_colors, box))
+            player_colors.append((dominant_colors, (cls, x1, y1, x2, y2)))
         else:
-            other_boxes.append(box)
+            other_boxes.append((cls, x1, y1, x2, y2))
+
     return player_colors, other_boxes
 
 # -------------------------

@@ -164,10 +164,13 @@ class Draw:
         x1, y1 = detection.points[0]
         x2, y2 = detection.points[1]
 
-        color = (0, 0, 0)
         if "color" in detection.data:
             color = detection.data["color"] + (255,)
+        else:
+            color = (0,0,0)
 
+#         color = (0, 0, 0)
+#         print(f"img: {img}")
         img = Draw.draw_bounding_box(img=img, rectangle=detection.points, color=color)
 
         if "label" in detection.data:
@@ -179,22 +182,22 @@ class Draw:
                 color=color,
             )
 
-        if "id" in detection.data and id is True:
-            id = detection.data["id"]
-            img = Draw.draw_text(
-                img=img,
-                origin=(x2, y1 - 20),
-                text=f"ID: {id}",
-                color=color,
-            )
-
-        if confidence:
-            img = Draw.draw_text(
-                img=img,
-                origin=(x1, y2),
-                text=str(round(detection.data["p"], 2)),
-                color=color,
-            )
+#         if "id" in detection.data and id is True:
+#             id = detection.data["id"]
+#             img = Draw.draw_text(
+#                 img=img,
+#                 origin=(x2, y1 - 20),
+#                 text=f"ID: {id}",
+#                 color=color,
+#             )
+# 
+#         if confidence:
+#             img = Draw.draw_text(
+#                 img=img,
+#                 origin=(x1, y2),
+#                 text=str(round(detection.data["p"], 2)),
+#                 color=color,
+#             )
 
         return img
 
@@ -821,7 +824,8 @@ class AbsolutePath:
         img: PIL.Image.Image,
         detection: norfair.Detection,
         coord_transformations,
-        color: tuple = (255, 255, 255),
+        poss: int,
+        teams
     ) -> PIL.Image.Image:
         """
         Draw the path
@@ -843,7 +847,12 @@ class AbsolutePath:
             Image with the path drawn
         """
 
-        self.add_new_point(detection=detection, color=color)
+        if poss==1:
+            self.add_new_point(detection=detection, color=(255,0,0))
+        else:
+            self.add_new_point(detection=detection, color=(240, 230, 188))
+
+
 
         if len(self.past_points) < 2:
             return img
