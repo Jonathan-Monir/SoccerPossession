@@ -44,7 +44,7 @@ def delete_file(file_path):
 def process_video(yolo_path, video_path, fps):
     coord_transformations = []
     motion_estimators = []
-    # Initialize YOLO detector with the given model path
+    # Initializ YOLO detector with the given model path
     yolo_detector = YOLO(yolo_path)
 
     # Initialize trackers and motion estimator
@@ -77,9 +77,12 @@ def process_video(yolo_path, video_path, fps):
 
         # Combine detections and update motion estimation
         detections = ball_detections + player_detections
-        coord_transformation = ru.update_motion_estimator(
-            motion_estimator=motion_estimator, detections=detections, frame=frame
-        )
+        try:
+            coord_transformation = ru.update_motion_estimator(
+                motion_estimator=motion_estimator, detections=detections, frame=frame
+            )
+        except:
+            pass
 
         # Tracking: update trackers for players and ball separately
         player_track_objects = player_tracker.update(

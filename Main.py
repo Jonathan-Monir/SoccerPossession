@@ -26,24 +26,22 @@ def measure_time(func, *args, process_name="Process"):
     return result
 
 # TRACKING
-results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\new18.mp4", 20, process_name="Tracking")
+try:
+    results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\barca3.mp4", 20, process_name="Tracking")
+except:
+    pass
 
 
-team1 = 0
-team2 = 0
-
-
-
-team_poss_list = [1]
 motion_estimators = 1
 
 # CLUSTERING
 results_with_class_ids, team1_color, team2_color = measure_time(main_multi_frame, results_tracking, process_name="Clustering")
 
 
-
-
-_, frames = vid(results_with_class_ids, team1_color=(255, 0, 0), team2_color=(0, 0, 255))
+# Ensure team colors are in tuple format for OpenCV
+team1_color = tuple(map(int, team1_color))
+team2_color = tuple(map(int, team2_color))
+_, frames = vid(results_with_class_ids, team1_color=team1_color, team2_color=team2_color)
 
 
 # Calibration configuration

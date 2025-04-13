@@ -284,11 +284,12 @@ def multi_frame_cluster(results, model=None, norfair=False):
                 if norfair:
                     cls, x1, x2, y1, y2 = box
                 else:
-                    _, x1, x2, y1, y2 = box
+                    cls, x1, x2, y1, y2 = box
 
                 x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
                 crop = frame[y1:y2, x1:x2]
-                show_cropped_frame(crop, "multiframecl")
+                if cls!=0:
+                    show_cropped_frame(crop, "mltiframe")
                 if crop.size == 0:
                     continue
                 feat = extract_deep_features(crop, model)
@@ -394,7 +395,8 @@ def extract_player_colors(image, detections, norfair=True):
         y1, y2 = max(0, y1), min(image.shape[0], y2)
 
         if cls in range(1, 6):  # Players only
-            crop = image_rgb[y1:y2, x1:x2]
+            crop = image_rgb[y1+35:y2+35, x1+12:x2+12]
+            show_cropped_frame(crop)
 
             if crop.size == 0:
                 print(f"Skipped zero-size crop for box: {x1},{y1},{x2},{y2}")
