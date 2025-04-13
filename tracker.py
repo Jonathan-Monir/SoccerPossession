@@ -63,7 +63,6 @@ def process_video(yolo_path, video_path, fps):
     for i, frame in enumerate(video):
         # Compute noise level
         noise_level = compute_noise(frame)
-        print(f"Frame {i}: Noise Level = {noise_level:.2f}")
 
         # Apply denoising
         if noise_level > 60:

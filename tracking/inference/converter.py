@@ -187,6 +187,7 @@ class Converter:
             for tracked_object in live_objects:
                 detection = tracked_object.last_detection
                 detection.data["id"] = int(tracked_object.id)
+                detection.label = cls
                 detections.append(detection)
 
             return detections

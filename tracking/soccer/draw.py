@@ -821,11 +821,11 @@ class AbsolutePath:
 
     def draw(
         self,
-        img: PIL.Image.Image,
-        detection: norfair.Detection,
+        img,
+        detection,
         coord_transformations,
-        poss: int,
-        teams
+        poss,
+        teams,
     ) -> PIL.Image.Image:
         """
         Draw the path
@@ -848,9 +848,9 @@ class AbsolutePath:
         """
 
         if poss==1:
-            self.add_new_point(detection=detection, color=(255,0,0))
+            self.add_new_point(detection=detection, color=teams[0].color)
         else:
-            self.add_new_point(detection=detection, color=(240, 230, 188))
+            self.add_new_point(detection=detection, color=teams[1].color)
 
 
 

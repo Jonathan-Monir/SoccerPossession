@@ -26,8 +26,7 @@ class Player:
         self.team = None
 
         if detection:
-            if "team" in detection.data:
-                self.team = detection.data["team"]
+            self.team = detection.label
 
     def get_left_foot(self, points: np.array):
         x1, y1 = points[0]
@@ -148,7 +147,7 @@ class Player:
         return self.right_foot_abs
 
     def draw(
-        self, frame: PIL.Image.Image, confidence: bool = False, id: bool = False
+            self, frame, confidence, id, teams
     ) -> PIL.Image.Image:
         """
         Draw the player on the frame
@@ -170,8 +169,15 @@ class Player:
         if self.detection is None:
             return frame
 
+        if self.detection.label == 1:
+            self.color = teams[0].color
+        else: 
+            self.color = teams[1].color
+
         if self.team is not None:
-            self.detection.data["color"] = self.team.color
+            self.detection.data["color"] = self.color
+
+            
 
         return Draw.draw_detection(self.detection, frame, confidence=confidence, id=id)
 
@@ -262,7 +268,7 @@ class Player:
             Frame with players drawn
         """
         for player in players:
-            frame = player.draw(frame, confidence=confidence, id=id)
+            frame = player.draw(frame, confidence=confidence, id=id, teams=teams)
 
         return frame
 

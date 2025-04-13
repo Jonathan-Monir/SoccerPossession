@@ -1,4 +1,6 @@
+import enum
 import json
+from yolo_norfair import yolo_to_norfair_detections
 import time
 from typing import List
 from PIL import Image
@@ -11,6 +13,7 @@ from transformation import process_field_transformation
 from possessionCalculation import CalculatePossession
 import warnings
 from videoDrawImprove import draw_bounding_boxes_on_frames, save_video_from_frames
+from make_vid import vid
 warnings.filterwarnings("ignore")
 
 def measure_time(func, *args, process_name="Process"):
@@ -23,19 +26,25 @@ def measure_time(func, *args, process_name="Process"):
     return result
 
 # TRACKING
-results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\manc3.mp4", 20, process_name="Tracking")
+results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\new18.mp4", 20, process_name="Tracking")
 
 
 team1 = 0
 team2 = 0
 
+
+
 team_poss_list = [1]
 motion_estimators = 1
-# visualize = draw_bounding_boxes_on_frames(results_with_class_ids, team1_color, team2_color, team_poss_list)
-visualize = draw_bounding_boxes_on_frames(results_tracking, team1, team2, team_poss_list, motion_estimators, coord_transformations, video)
 
 # CLUSTERING
 results_with_class_ids, team1_color, team2_color = measure_time(main_multi_frame, results_tracking, process_name="Clustering")
+
+
+
+
+_, frames = vid(results_with_class_ids, team1_color=(255, 0, 0), team2_color=(0, 0, 255))
+
 
 # Calibration configuration
 calibrator_cfgs = {
@@ -50,7 +59,12 @@ calibrator_cfgs = {
 # FIELD TRANSFORMATION
 results = measure_time(process_field_transformation, results_with_class_ids, calibrator_cfgs, process_name="Field Transformation")
 
-visualize = draw_bounding_boxes_on_frames(results_tracking, (0,244,244), (0,123,123), [], motion_estimators, coord_transformations, video)
+
+
+for i, (frame, ball_detections, player_detections) in enumerate(results_with_class_ids):
+    player_detections = yolo_to_norfair_detections(player_detections)
+    results_with_class_ids[i] = (frame, ball_detections, player_detections)
+    print(player_detections)
 
 # POSSESSION CALCULATION
 yardTL, yardTR, yardBL, yardBR = [29.0, 17.0], [45.5, 17.0], [29.0, 26.0], [45.5, 26.0]
@@ -62,7 +76,7 @@ print("Possession Results:", poss)
 
 
 # visualize = draw_bounding_boxes_on_frames(results_with_class_ids, team1_color, team2_color, team_poss_list)
-visualize = draw_bounding_boxes_on_frames(results_tracking, team1_color, team2_color, team_poss_list, motion_estimator, coord_transformations, video)
+visualize = draw_bounding_boxes_on_frames(results_with_class_ids, team1_color, team2_color, team_poss_list, motion_estimators, coord_transformations, video)
 
 
 

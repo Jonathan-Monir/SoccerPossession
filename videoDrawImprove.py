@@ -15,18 +15,22 @@ from norfair import Video
 
 
 
-def draw_bounding_boxes_on_frames(results_with_class_ids, team1, team2, team_poss_list, motion_estimator, coord_transformations, video):
+def draw_bounding_boxes_on_frames(results_with_class_ids, team1_color, team2_color, team_poss_list, motion_estimator, coord_transformations, video):
 # motion_estimator = MotionEstimator()
 # coord_transformations = None
 
 
+# Convert RGB to BGR
+    team1_color_bgr = team1_color[::-1]
+    team2_color_bgr = team2_color[::-1]
+
     team1 = Team(
         name="Chelsea",
         abbreviation="CHE",
-        color=(255, 0, 0)
+        color=team1_color_bgr
     )
 
-    team2 = Team(name="Man City", abbreviation="MNC", color=(240, 230, 188))
+    team2 = Team(name="Man City", abbreviation="MNC", color=team2_color_bgr)
     teams = [team1, team2]
 
 # Paths
@@ -45,16 +49,16 @@ def draw_bounding_boxes_on_frames(results_with_class_ids, team1, team2, team_pos
             players = Player.from_detections(detections=players_detections, teams=teams)
 
             if True:
-                frame = Player.draw_players(
-                    players=players, frame=frame, confidence=False, id=True, teams=teams
-                )
+#                 frame = Player.draw_players(
+#                     players=players, frame=frame, confidence=False, id=True, teams=teams
+#                 )
 
                 frame = path.draw(
                     img=frame,
                     detection=ball.detection,
                     coord_transformations=coord_transformations[i],
                     poss=1,
-                    teams=teams
+                    teams=teams,
                 )
 
 #             frame = match.draw_possession_counter(

@@ -9,7 +9,6 @@ from sklearn.cluster import MiniBatchKMeans  # Replacing KMeans with MiniBatchKM
 from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input
 from tensorflow.keras.models import Model
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from norfair import Detection
 
 def show_cropped_frame(crop, window_name='Cropped Frame'):
     """
@@ -55,6 +54,7 @@ def parse_yolo_labels(file_path):
         for line in file:
             parts = list(map(float, line.split()))
             cls, x1, x2, y1, y2 = parts
+            bounding_boxes.append([cls, x1, y1, x2, y2])
     return bounding_boxes
 
 # -------------------------
@@ -273,7 +273,6 @@ def visualize_results(vis_image, player_colors, team_labels, other_boxes, frame_
 # -------------------------
 # Multi-Frame Clustering (No File Saving)
 # -------------------------
-
 def multi_frame_cluster(results, model=None, norfair=False):
     all_features = []   # Features for clustering
     features_info = []  # Mapping: (frame_index, original_box)
@@ -282,13 +281,12 @@ def multi_frame_cluster(results, model=None, norfair=False):
         if model is not None:
             for box in player_detections:
                 if norfair:
-                    cls, x1, x2, y1, y2 = box
+                    cls, x1, y1, x2, y2 = box
                 else:
-                    _, x1, x2, y1, y2 = box
+                    _, x1, y1, x2, y2 = box
 
                 x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
                 crop = frame[y1:y2, x1:x2]
-                show_cropped_frame(crop, "multiframecl")
                 if crop.size == 0:
                     continue
                 feat = extract_deep_features(crop, model)
@@ -302,49 +300,23 @@ def multi_frame_cluster(results, model=None, norfair=False):
                 features_info.append((frame_idx, box))
     
     all_features = np.array(all_features)
-    if all_features.any():
+    if all_features:
         team_labels_global = classify_players_by_features(all_features, n_teams=2)
         
         new_player_detections = {i: [] for i in range(len(results))}
         for global_idx, label in enumerate(team_labels_global):
             frame_idx, original_box = features_info[global_idx]
-
             new_label = label + 1  # Map label to team IDs (0 reserved for ball)
-            new_box = [new_label] + list(original_box[1:])
+            new_box = [new_label] + original_box[1:]
             new_player_detections[frame_idx].append(new_box)
         
         final_results = []
         for idx, (frame, ball_detections, _) in enumerate(results):
             updated_boxes = new_player_detections.get(idx, []) + ball_detections
-            cleaned_boxes = []
-            for box in updated_boxes:
-                if isinstance(box, Detection):
-                    class_id = box.data.get("id", 0)
-                    
-                    # Fallback size if scores are None
-                    box_size = box.scores[0] if box.scores and len(box.scores) > 0 else 50
-
-                    x_center, y_center = box.points[0]
-                    x1 = int(x_center - box_size / 2)
-                    y1 = int(y_center - box_size / 2)
-                    x2 = int(x_center + box_size / 2)
-                    y2 = int(y_center + box_size / 2)
-                    crop = frame[y1:y2, x1:x2]
-#                     print(f"cl2: {x1,x1,y2,y2}")
-
-                    cleaned_boxes.append([class_id, x1, y1, x2, y2])
-                else:
-                    # Handle cases where box is a list (not a Detection)
-                    if isinstance(box, list) and len(box) == 5:
-                        cleaned_boxes.append(box)
-                    else:
-                        print(f"Skipping invalid box format: {box}")
-            
-            cleaned_boxes.sort(key=lambda x: (x[0], x[1], x[2], x[3], x[4]))
-            final_results.append((frame, ball_detections, cleaned_boxes))
+            updated_boxes.sort(key=lambda x: (x[0], x[1], x[2], x[3], x[4]))
+            final_results.append((frame, ball_detections, updated_boxes))
     else:
         final_results = [(frame, None, None)]
-    
     return final_results
 
 # -------------------------
@@ -363,45 +335,42 @@ def extract_player_colors(image, detections, norfair=True):
         print(" Warning: Detections is None or not a list.")
         return [], []
 
+    # Convert once at the beginning
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     for det in detections:
-
-        if norfair and hasattr(det, 'points'):
-            # Norfair Detection object
+        if norfair:
+            # Norfair detection: det.points is a list of keypoints (usually 1 point for tracking)
             if len(det.points[0]) != 2:
                 print("Invalid detection points structure.")
                 continue
 
             x_center, y_center = det.points[0]
+
+            # Estimate box from center (customize based on your player size)
             width, height = 50, 100
             x1 = int(x_center - width // 2)
             y1 = int(y_center - height // 2)
             x2 = int(x_center + width // 2)
             y2 = int(y_center + height // 2)
-            cls = getattr(det, 'label', 1)
 
-        elif isinstance(det, list) and len(det) == 5:
-            # Standard YOLO-style list
-            cls, x1, y1, x2, y2 = det
-#             print(f"extr: {x1,x2,y1,y2}")
+            # Class label: you *must* be setting this elsewhere in your pipeline!
+            cls = getattr(det, 'label', 1)  # Default to class 1 (player)
         else:
-            print(f"Skipping unknown detection format: {det}")
-            continue
+            # Original YOLO-style box: (cls, x1, x2, y1, y2)
+            cls, x1, x2, y1, y2 = det
 
-        # Clamp to image boundaries
+        # Clamp values to image size
         x1, x2 = max(0, x1), min(image.shape[1], x2)
         y1, y2 = max(0, y1), min(image.shape[0], y2)
 
-        if cls in range(1, 6):  # Players only
+        if cls in range(1, 6):  # Only process player classes
             crop = image_rgb[y1:y2, x1:x2]
-
             if crop.size == 0:
                 print(f"Skipped zero-size crop for box: {x1},{y1},{x2},{y2}")
                 continue
             dominant_colors = extract_dominant_colors(crop)
             player_colors.append((dominant_colors, (cls, x1, y1, x2, y2)))
-
         else:
             other_boxes.append((cls, x1, y1, x2, y2))
 
@@ -410,50 +379,35 @@ def extract_player_colors(image, detections, norfair=True):
 # -------------------------
 # Per-Frame Processing Function (Parallelized)
 # -------------------------
-
-def process_frame(frame_idx, frame, ball_detections, updated_detections, debug):
+def process_frame(frame_idx, frame, ball_detections, updated_boxes, debug):
     start_frame_proc = time.perf_counter()
-
-    if updated_detections is None:
-        return frame_idx, [], [], []
+    # (Optional) Save crops for debugging
     if debug:
         os.makedirs("team_1", exist_ok=True)
         os.makedirs("team_2", exist_ok=True)
-
-        for det_idx, detection in enumerate(updated_detections):
-            team_label = detection.data.get("team", None)
+        for det_idx, box in enumerate(updated_boxes):
+            team_label = box[0]
             if team_label in [1, 2]:
-                # Assume the detection has 2 points: top-left and bottom-right
-                if len(detection.points) == 2:
-                    top_left, bottom_right = detection.points
-                else:
-                    # fallback: use center point + fixed size box
-                    cx, cy = detection.points[0]
-                    w = h = 50  # tweak size if needed
-                    top_left = (cx - w // 2, cy - h // 2)
-                    bottom_right = (cx + w // 2, cy + h // 2)
-
-                x1, y1 = map(int, top_left)
-                x2, y2 = map(int, bottom_right)
+                _, x1, x2, y1, y2 = box
+                x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
                 crop = frame[y1:y2, x1:x2]
-                show_cropped_frame(crop, "proc")
-
                 folder = "team_1" if team_label == 1 else "team_2"
                 cv2.imwrite(os.path.join(folder, f"frame{frame_idx}_det{det_idx}.jpg"), crop)
-
+    
     start_color = time.perf_counter()
-    player_colors, other_boxes = extract_player_colors(frame, updated_detections)
+    player_colors, other_boxes = extract_player_colors(frame, updated_boxes)
     end_color = time.perf_counter()
     if debug:
         print(f"extract_player_colors for frame {frame_idx} took {end_color - start_color:.4f} seconds")
-
-    # Map team labels for aggregation: team 1 → 0, team 2 → 1
+    
+    # Here we create team_labels based on updated_boxes.
+    # In multi_frame_cluster, players got labels 1 or 2.
+    # We map these to 0 (team1) and 1 (team2) for aggregation.
     team_labels = []
-    for detection in updated_detections:
-        label = detection[0]
-        if label in [1, 2]:
-            team_labels.append(0 if label == 1 else 1)
-
+    for box in updated_boxes:
+        if box[0] in [1, 2]:
+            team_labels.append(0 if box[0] == 1 else 1)
+    
     end_frame_proc = time.perf_counter()
     return frame_idx, player_colors, team_labels, other_boxes
 
