@@ -49,9 +49,9 @@ def draw_bounding_boxes_on_frames(results_with_class_ids, team1_color, team2_col
             players = Player.from_detections(detections=players_detections, teams=teams)
 
             if True:
-#                 frame = Player.draw_players(
-#                     players=players, frame=frame, confidence=False, id=True, teams=teams
-#                 )
+                frame = Player.draw_players(
+                    players=players, frame=frame, confidence=False, id=True, teams=teams
+                )
 
                 frame = path.draw(
                     img=frame,

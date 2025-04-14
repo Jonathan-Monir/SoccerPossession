@@ -27,7 +27,7 @@ def measure_time(func, *args, process_name="Process"):
 
 # TRACKING
 try:
-    results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\barca3.mp4", 20, process_name="Tracking")
+    results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\new18.mp4", 20, process_name="Tracking")
 except:
     pass
 

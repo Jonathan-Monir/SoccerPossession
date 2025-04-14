@@ -374,12 +374,17 @@ def extract_player_colors(image, detections, norfair=True):
                 print("Invalid detection points structure.")
                 continue
 
-            x_center, y_center = det.points[0]
-            width, height = 50, 100
-            x1 = int(x_center - width // 2)
-            y1 = int(y_center - height // 2)
-            x2 = int(x_center + width // 2)
-            y2 = int(y_center + height // 2)
+            x1, y1 = det.points[0]
+            x2, y2 = det.points[1]
+#             print(f"xy: {x_center, y_center, width, height}")
+#             x1 = int(x_center - width // 2)
+#             y1 = int(y_center - height // 2)
+#             x2 = int(x_center + width // 2)
+#             y2 = int(y_center + height // 2)
+            x1 = int(x1)
+            x2 = int(x2)
+            y1 = int(y1)
+            y2 = int(y2)
             cls = getattr(det, 'label', 1)
 
         elif isinstance(det, list) and len(det) == 5:
@@ -395,8 +400,7 @@ def extract_player_colors(image, detections, norfair=True):
         y1, y2 = max(0, y1), min(image.shape[0], y2)
 
         if cls in range(1, 6):  # Players only
-            crop = image_rgb[y1+35:y2+35, x1+12:x2+12]
-            show_cropped_frame(crop)
+            crop = image_rgb[y1:y2, x1:x2]
 
             if crop.size == 0:
                 print(f"Skipped zero-size crop for box: {x1},{y1},{x2},{y2}")
@@ -412,6 +416,10 @@ def extract_player_colors(image, detections, norfair=True):
 # -------------------------
 # Per-Frame Processing Function (Parallelized)
 # -------------------------
+def yolobbox2bbox(x,y,w,h):
+    x1, y1 = x-w/2, y-h/2
+    x2, y2 = x+w/2, y+h/2
+    return x1, y1, x2, y2
 
 def process_frame(frame_idx, frame, ball_detections, updated_detections, debug):
     start_frame_proc = time.perf_counter()
@@ -427,18 +435,18 @@ def process_frame(frame_idx, frame, ball_detections, updated_detections, debug):
             if team_label in [1, 2]:
                 # Assume the detection has 2 points: top-left and bottom-right
                 if len(detection.points) == 2:
-                    top_left, bottom_right = detection.points
+                    x1, y1 = detection.points[0]
+                    x2, y2 = detection.points[1]
                 else:
                     # fallback: use center point + fixed size box
-                    cx, cy = detection.points[0]
-                    w = h = 50  # tweak size if needed
-                    top_left = (cx - w // 2, cy - h // 2)
-                    bottom_right = (cx + w // 2, cy + h // 2)
+                    x1, y1 = detection.points[0]
+                    x2, y2 = detection.points[1]
 
-                x1, y1 = map(int, top_left)
-                x2, y2 = map(int, bottom_right)
+                x1 = int(x1)
+                x2 = int(x2)
+                y1 = int(y1)
+                y2 = int(y2)
                 crop = frame[y1:y2, x1:x2]
-                show_cropped_frame(crop, "proc")
 
                 folder = "team_1" if team_label == 1 else "team_2"
                 cv2.imwrite(os.path.join(folder, f"frame{frame_idx}_det{det_idx}.jpg"), crop)

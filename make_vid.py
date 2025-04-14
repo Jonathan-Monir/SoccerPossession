@@ -26,7 +26,7 @@ def vid(results_with_class_ids, team1_color, team2_color, output_path="output_vi
         for det in player_detections:
             class_id, x1, y1, x2, y2 = det
             color = team1_color if class_id == 1 else team2_color
-            cv2.rectangle(frame, (x1+25, y1+50), (x2+25, y2+50), color, 2)
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
 
         # Write frame to output
