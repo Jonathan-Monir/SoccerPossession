@@ -69,6 +69,10 @@ def process_video(yolo_path, video_path, target_fps, last_frame):
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
 
+# Adjust last_frame if set to -1 (i.e., use full video)
+    if last_frame == -1:
+        last_frame = total_frames - 1
+
     # Compute skip interval: process every Nth frame to match target_fps
     if target_fps <= 0 or target_fps > orig_fps:
         raise ValueError(f"target_fps must be >0 and <= source FPS ({orig_fps})")
@@ -90,12 +94,6 @@ def process_video(yolo_path, video_path, target_fps, last_frame):
             continue
 
         frame_idx += 1
-        # Compute noise level
-        noise_level = compute_noise(frame)
-
-        # Apply denoising if needed
-        if noise_level > 60:
-            frame = apply_nlm_denoising(frame)
 
         # Object Detection
         ball_detections = ru.get_detections(
