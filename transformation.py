@@ -83,8 +83,8 @@ class CameraCalibrator:
             # Adjust paths for Kaggle environment
             cfg_path = '/kaggle/working/SoccerPossession/' + cfg_path
             cfg_line_path = '/kaggle/working/SoccerPossession/' + cfg_line_path
-            kp_model_path = '/kaggle/working/SoccerPossession/' + kp_model_path
-            line_model_path = '/kaggle/working/SoccerPossession/' + line_model_path
+#             kp_model_path = '/kaggle/working/SoccerPossession/' + kp_model_path
+#             line_model_path = '/kaggle/working/SoccerPossession/' + line_model_path
 
         # Load configuration and models
         self.cfg = yaml.safe_load(open(cfg_path, 'r'))
