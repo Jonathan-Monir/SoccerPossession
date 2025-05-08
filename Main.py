@@ -17,6 +17,8 @@ from make_vid import vid
 warnings.filterwarnings("ignore")
 results_tracking = []
 
+kaggle = True
+
 def measure_time(func, *args, process_name="Process"):
     """Helper function to measure execution time."""
     start_time = time.time()
@@ -53,7 +55,7 @@ calibrator_cfgs = {
 }
 
 # FIELD TRANSFORMATION
-results = measure_time(process_field_transformation, results_with_class_ids, calibrator_cfgs, process_name="Field Transformation")
+results = measure_time(process_field_transformation, results_with_class_ids, calibrator_cfgs, kaggle, process_name="Field Transformation")
 
 
 
