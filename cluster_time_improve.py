@@ -331,7 +331,6 @@ def multi_frame_cluster(results, model=None, norfair=False):
                     x2 = int(x_center + box_size / 2)
                     y2 = int(y_center + box_size / 2)
                     crop = frame[y1:y2, x1:x2]
-#                     print(f"cl2: {x1,x1,y2,y2}")
 
                     cleaned_boxes.append([class_id, x1, y1, x2, y2])
                 else:

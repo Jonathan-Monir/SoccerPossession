@@ -117,7 +117,6 @@ def process_field_transformation(precomputed_results, calibrator_cfgs):
     """
     # Use the first frame for calibration.
     first_frame = precomputed_results[0][0]
-    print(f"type of frame{type(first_frame)}")
     frame_height, frame_width = first_frame.shape[:2]
     
     # Setup calibration.

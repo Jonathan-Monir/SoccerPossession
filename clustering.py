@@ -323,7 +323,6 @@ def multi_frame_cluster(results, model=None):
                 features_info.append((frame_idx, box))
         else:
             player_colors, _ = extract_player_colors(frame, player_detections)
-            print("Hi")
             for colors, box in player_colors:
                 feat = np.array(colors).flatten()
                 all_features.append(feat)
@@ -386,4 +385,3 @@ def main_multi_frame():
 
 if __name__ == '__main__':
     results_with_class_ids = main_multi_frame()
-    print("Multi-frame clustering complete. Processed results returned.")

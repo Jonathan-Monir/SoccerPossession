@@ -953,7 +953,9 @@ def get_detections(yolov11_detector, frame: np.ndarray, class_id: int, confidenc
     List[norfair.Detection]
         List of detections for the specified class.
     """
-    results = yolov11_detector.predict(frame, imgsz = 1024)
+    h, w = frame.shape[:2]
+    imgsz = max(h, w)
+    results = yolov11_detector.predict(frame, imgsz=imgsz)
     detections = []
     for result in results:
         # Filter boxes by class ID and confidence threshold
