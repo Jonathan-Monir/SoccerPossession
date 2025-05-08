@@ -15,6 +15,7 @@ import warnings
 from videoDrawImprove import draw_bounding_boxes_on_frames, save_video_from_frames
 from make_vid import vid
 warnings.filterwarnings("ignore")
+results_tracking = []
 
 def measure_time(func, *args, process_name="Process"):
     """Helper function to measure execution time."""
@@ -26,10 +27,7 @@ def measure_time(func, *args, process_name="Process"):
     return result
 
 # TRACKING
-try:
-    results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\new18.mp4", 20, process_name="Tracking")
-except:
-    pass
+results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\new18.mp4", 10, 200, process_name="Tracking")
 
 
 motion_estimators = 1

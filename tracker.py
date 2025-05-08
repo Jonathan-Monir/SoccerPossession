@@ -41,32 +41,62 @@ def delete_file(file_path):
         print(f"File not found: {file_path}")
 
 
-def process_video(yolo_path, video_path, fps):
+
+def process_video(yolo_path, video_path, target_fps, last_frame):
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     coord_transformations = []
     motion_estimators = []
-    # Initializ YOLO detector with the given model path
+    # Initialize YOLO detector with the given model path
     yolo_detector = YOLO(yolo_path)
+    yolo_detector.model.to(device)
 
     # Initialize trackers and motion estimator
-    player_tracker = Tracker(distance_function=mean_euclidean, distance_threshold=250, initialization_delay=3, hit_counter_max=90)
-    ball_tracker = Tracker(distance_function=mean_euclidean, distance_threshold=150, initialization_delay=20, hit_counter_max=2000)
+    player_tracker = Tracker(distance_function=mean_euclidean,
+                             distance_threshold=250,
+                             initialization_delay=3,
+                             hit_counter_max=90)
+    ball_tracker = Tracker(distance_function=mean_euclidean,
+                           distance_threshold=150,
+                           initialization_delay=20,
+                           hit_counter_max=2000)
     motion_estimator = MotionEstimator()
     coord_transformation = None
 
-    # Initialize video capture (assuming Video class accepts an fps parameter)
-    video = Video(input_path=video_path, output_fps=fps, output_path="new_vid.mp4")
+    # Open source video to read its FPS and total frame count
+    cap = cv2.VideoCapture(video_path)
+    orig_fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    cap.release()
 
-    # List to store each frame with its detections
+    # Compute skip interval: process every Nth frame to match target_fps
+    if target_fps <= 0 or target_fps > orig_fps:
+        raise ValueError(f"target_fps must be >0 and <= source FPS ({orig_fps})")
+    skip_interval = int(round(orig_fps / target_fps))
+
+    # Initialize video reader/writer (assuming Video wraps cv2.VideoWriter)
+    video = Video(input_path=video_path, output_path="new_vid.mp4")
+
     results = []
+    frame_idx = 0
 
-    # Process each frame
     for i, frame in enumerate(video):
+        # Stop if we've hit the last desired frame or EOF
+        if i > last_frame or i >= total_frames:
+            break
+
+        # Skip frames to match the new FPS
+        if skip_interval > 1 and (i % skip_interval) != 0:
+            continue
+
+        frame_idx += 1
         # Compute noise level
         noise_level = compute_noise(frame)
 
-        # Apply denoising
+        # Apply denoising if needed
         if noise_level > 60:
             frame = apply_nlm_denoising(frame)
+
         # Object Detection
         ball_detections = ru.get_detections(
             yolo_detector, frame, class_id=0, confidence_threshold=0.3
@@ -79,20 +109,24 @@ def process_video(yolo_path, video_path, fps):
         detections = ball_detections + player_detections
         try:
             coord_transformation = ru.update_motion_estimator(
-                motion_estimator=motion_estimator, detections=detections, frame=frame
+                motion_estimator=motion_estimator,
+                detections=detections,
+                frame=frame
             )
-        except:
+        except Exception:
             pass
 
-        # Tracking: update trackers for players and ball separately
+        # Tracking updates
         player_track_objects = player_tracker.update(
-            detections=player_detections, coord_transformations=coord_transformation
+            detections=player_detections,
+            coord_transformations=coord_transformation
         )
         ball_track_objects = ball_tracker.update(
-            detections=ball_detections, coord_transformations=coord_transformation
+            detections=ball_detections,
+            coord_transformations=coord_transformation
         )
 
-        # Convert tracked objects back to detection format
+        # Convert tracked objects back to detections
         player_detections = Converter.TrackedObjects_to_Detections_nor(
             player_track_objects, cls=1
         )
@@ -100,7 +134,7 @@ def process_video(yolo_path, video_path, fps):
             ball_track_objects, cls=0
         )
 
-        # Append current frame and detections to results
+        # Append to results
         results.append((frame, ball_detections, player_detections))
         coord_transformations.append(coord_transformation)
         motion_estimators.append(motion_estimator)
