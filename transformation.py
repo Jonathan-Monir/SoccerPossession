@@ -81,10 +81,10 @@ class CameraCalibrator:
         # Check if running in Kaggle environment
         if os.path.exists('/kaggle/working'):
             # Adjust paths for Kaggle environment
-            cfg_path = '/kaggle/working/' + cfg_path
-            cfg_line_path = '/kaggle/working/' + cfg_line_path
-            kp_model_path = '/kaggle/working/' + kp_model_path
-            line_model_path = '/kaggle/working/' + line_model_path
+            cfg_path = '/kaggle/working/SoccerPossession' + cfg_path
+            cfg_line_path = '/kaggle/working/SoccerPossession' + cfg_line_path
+            kp_model_path = '/kaggle/working/SoccerPossession' + kp_model_path
+            line_model_path = '/kaggle/working/SoccerPossession' + line_model_path
 
         # Load configuration and models
         self.cfg = yaml.safe_load(open(cfg_path, 'r'))
