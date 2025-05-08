@@ -1,4 +1,5 @@
 import cv2
+import os
 import torch
 import yaml
 import numpy as np
@@ -75,7 +76,6 @@ class CameraCalibrator:
     Loads the camera calibration models and computes the projection matrix.
     """
     
-    import os
 
     def __init__(self, cfg_path, cfg_line_path, kp_model_path, line_model_path):
         # Check if running in Kaggle environment
