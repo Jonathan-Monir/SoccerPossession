@@ -5,65 +5,26 @@ def CalculatePossession(
     yardBL=[0.0, 0.0],
     yardBR=[105.0, 0.0],
 ):
+    # total frames counted, plus per-team counters
     frames = 0
     framesT1 = framesT2 = 0
+
     cumulative_possessions = []
     team_possession_list = []
     prevBall = None
 
     for i, entry in enumerate(data):
-        # --- DEBUG: inspect entry, players & ball types/content ---
-        if i < 5:
-            print(f"\n=== FRAME {i} DEBUG ===")
-            print(" raw entry :", repr(entry))
-            # attempt dict access
-            if isinstance(entry, dict):
-                print(" entry is dict")
-                pl = entry.get("players")
-                ba = entry.get("ball")
-            elif isinstance(entry, tuple):
-                print(f" entry is tuple, len={len(entry)}")
-                # show each element
-                for idx, elem in enumerate(entry):
-                    print(f"  elem[{idx}] ({type(elem)}): {repr(elem)}")
-                # heuristically guess:
-                # if second elem is list-of-dicts with class_id 1/2 → players
-                # if second elem is dict/class_id 0 or list thereof → ball
-                a, b, *rest = entry
-                # you'll see below which is which
-                pl, ba = None, None
-                if isinstance(b, list) and b and isinstance(b[0], dict) and b[0].get("class_id") in (1,2):
-                    pl = b
-                    ba = entry[2] if len(entry) > 2 else None
-                else:
-                    ba = b
-                    pl = entry[2] if len(entry) > 2 else None
-            else:
-                print(" entry is neither dict nor tuple, type =", type(entry))
-                pl = ba = None
+        # Unpack exactly (frame, ball, players)
+        # — drop the frame index or image if you don't need it
+        frame, ball, players = entry
 
-            print("  → players:", type(pl), repr(pl))
-            print("  → ball   :", type(ba), repr(ba))
-
-        # --- now actually assign players & ball for logic below ---
-        if isinstance(entry, dict):
-            players = entry.get("players")
-            ball     = entry.get("ball")
-        elif isinstance(entry, tuple) and len(entry) >= 3:
-            # adjust this mapping once you see the debug above
-            # for now, assume elem[1] = players, elem[2] = ball:
-            players, ball = entry[1], entry[2]
-        else:
-            # fallback: try any attributes
-            raise ValueError(f"Frame {i}: unexpected entry format: {type(entry)}")
-
-        # --- normalize empties ---
-        if not players:
+        # Normalize empty‐list cases → treat as “no detection”
+        if isinstance(players, list) and len(players) == 0:
             players = None
         if isinstance(ball, list) and len(ball) == 0:
             ball = None
 
-        # --- skip frames with no data ---
+        # If there are no players, or (first frame & no ball), we can only append the last %
         if players is None or (i == 0 and ball is None):
             cumulative_possessions.append(
                 GetPossessionPercentage(frames, framesT1, framesT2)
@@ -71,8 +32,10 @@ def CalculatePossession(
             team_possession_list.append(None)
             continue
 
-        # --- handle multiple-ball detections ---
+        # Previous ball position for distance‐based filtering
         prev_pos = prevBall["field_position"] if prevBall else None
+
+        # If multiple ball detections, pick the one closest to prevPos (if in bounds)
         if isinstance(ball, list) and len(ball) > 1:
             if (
                 prevBall
@@ -94,7 +57,7 @@ def CalculatePossession(
             else:
                 ball = ball[0]
 
-        # --- reuse previous ball if missing ---
+        # If we still have no ball (and it’s not frame 0), maybe reuse prevBall
         if ball is None and i > 0:
             if (
                 prevBall
@@ -109,22 +72,20 @@ def CalculatePossession(
                 team_possession_list.append(None)
                 continue
 
-        # --- compute distances ---
+        # Compute distances from each player to the ball
         distances = {"T1": [], "T2": []}
         for p in players:
-            # **DEBUG**: make sure ball is still dict or list here
-            if not isinstance(ball, dict):
-                print(f"ERROR: frame {i} — ball is not dict: {ball!r}")
-                raise TypeError(f"Unexpected ball type at frame {i}: {type(ball)}")
-            d = DistanceBetweenObjects(p["field_position"], ball["field_position"])
+            d = DistanceBetweenObjects(
+                p["field_position"], ball["field_position"]
+            )
             if p["class_id"] == 1:
                 distances["T1"].append(d)
             elif p["class_id"] == 2:
                 distances["T2"].append(d)
 
-        prevBall = ball
+        prevBall = ball  # for the next frame’s filtering
 
-        # --- skip if neither team near ball ---
+        # If neither team has any players near the ball, skip
         if not distances["T1"] and not distances["T2"]:
             cumulative_possessions.append(
                 GetPossessionPercentage(frames, framesT1, framesT2)
@@ -132,7 +93,7 @@ def CalculatePossession(
             team_possession_list.append(None)
             continue
 
-        # --- decide possession ---
+        # Decide who has possession this frame
         if not distances["T1"]:
             framesT2 += 1
             owner = 2
@@ -156,13 +117,10 @@ def CalculatePossession(
 
 
 def DistanceBetweenObjects(a, b):
-    return ((a[0] - b[0])**2 + (a[1] - b[1])**2)**0.5
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
 
 def GetPossessionPercentage(frames, f1, f2):
     if frames == 0:
-        return {'possT1': 0, 'possT2': 0}
-    return {
-        'possT1': (f1 / frames) * 100,
-        'possT2': (f2 / frames) * 100
-    }
+        return {"possT1": 0, "possT2": 0}
+    return {"possT1": (f1 / frames) * 100, "possT2": (f2 / frames) * 100}
