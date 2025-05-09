@@ -5,26 +5,31 @@ def CalculatePossession(
     yardBL=[0.0, 0.0],
     yardBR=[105.0, 0.0],
 ):
-    # total frames counted, plus per-team counters
     frames = 0
     framesT1 = framesT2 = 0
-
     cumulative_possessions = []
     team_possession_list = []
     prevBall = None
 
     for i, entry in enumerate(data):
-        # Unpack exactly (frame, ball, players)
-        # — drop the frame index or image if you don't need it
         frame, ball, players = entry
 
-        # Normalize empty‐list cases → treat as “no detection”
+        # Normalize empty lists to None and handle invalid types
         if isinstance(players, list) and len(players) == 0:
             players = None
         if isinstance(ball, list) and len(ball) == 0:
             ball = None
+        # Ensure ball is a dictionary if not None
+        if ball is not None:
+            if isinstance(ball, list):
+                if len(ball) == 1:
+                    ball = ball[0]  # Extract single detection from list
+                else:
+                    ball = None  # Invalid list length after processing
+            if not isinstance(ball, dict):
+                ball = None  # Ensure ball is a dictionary
 
-        # If there are no players, or (first frame & no ball), we can only append the last %
+        # Handle cases with no players or initial frame with no ball
         if players is None or (i == 0 and ball is None):
             cumulative_possessions.append(
                 GetPossessionPercentage(frames, framesT1, framesT2)
@@ -32,10 +37,10 @@ def CalculatePossession(
             team_possession_list.append(None)
             continue
 
-        # Previous ball position for distance‐based filtering
+        # Track previous ball position
         prev_pos = prevBall["field_position"] if prevBall else None
 
-        # If multiple ball detections, pick the one closest to prevPos (if in bounds)
+        # Select best ball from multiple detections if possible
         if isinstance(ball, list) and len(ball) > 1:
             if (
                 prevBall
@@ -57,35 +62,55 @@ def CalculatePossession(
             else:
                 ball = ball[0]
 
-        # If we still have no ball (and it’s not frame 0), maybe reuse prevBall
+        # Fallback to previous ball if current is None and within bounds
         if ball is None and i > 0:
-            if (
-                prevBall
-                and yardTL[0] <= prev_pos[0] <= yardTR[0]
-                and yardBL[1] <= prev_pos[1] <= yardTL[1]
-            ):
-                ball = prevBall
-            else:
-                cumulative_possessions.append(
-                    GetPossessionPercentage(frames, framesT1, framesT2)
-                )
-                team_possession_list.append(None)
-                continue
+            if prevBall and prevBall.get("field_position"):
+                prev_pos = prevBall["field_position"]
+                if (
+                    yardTL[0] <= prev_pos[0] <= yardTR[0]
+                    and yardBL[1] <= prev_pos[1] <= yardTL[1]
+                ):
+                    ball = prevBall
 
-        # Compute distances from each player to the ball
-        distances = {"T1": [], "T2": []}
-        for p in players:
-            d = DistanceBetweenObjects(
-                p["field_position"], ball["field_position"]
+        # Validate ball is a dictionary before proceeding
+        if ball is not None and not isinstance(ball, dict):
+            ball = None
+
+        if ball is None:
+            cumulative_possessions.append(
+                GetPossessionPercentage(frames, framesT1, framesT2)
             )
-            if p["class_id"] == 1:
+            team_possession_list.append(None)
+            prevBall = ball
+            continue
+
+        # Calculate distances from players to the ball
+        distances = {"T1": [], "T2": []}
+        ball_pos = ball.get("field_position")
+        if not ball_pos:
+            cumulative_possessions.append(
+                GetPossessionPercentage(frames, framesT1, framesT2)
+            )
+            team_possession_list.append(None)
+            prevBall = ball
+            continue
+
+        for p in players:
+            if not isinstance(p, dict):
+                continue  # Skip invalid player entries
+            p_pos = p.get("field_position")
+            p_team = p.get("class_id")
+            if not p_pos or p_team not in [1, 2]:
+                continue
+            d = DistanceBetweenObjects(p_pos, ball_pos)
+            if p_team == 1:
                 distances["T1"].append(d)
-            elif p["class_id"] == 2:
+            else:
                 distances["T2"].append(d)
 
-        prevBall = ball  # for the next frame’s filtering
+        prevBall = ball
 
-        # If neither team has any players near the ball, skip
+        # Determine possession based on closest player
         if not distances["T1"] and not distances["T2"]:
             cumulative_possessions.append(
                 GetPossessionPercentage(frames, framesT1, framesT2)
@@ -93,19 +118,22 @@ def CalculatePossession(
             team_possession_list.append(None)
             continue
 
-        # Decide who has possession this frame
+        owner = None
         if not distances["T1"]:
             framesT2 += 1
             owner = 2
         elif not distances["T2"]:
             framesT1 += 1
             owner = 1
-        elif min(distances["T1"]) < min(distances["T2"]):
-            framesT1 += 1
-            owner = 1
         else:
-            framesT2 += 1
-            owner = 2
+            min_t1 = min(distances["T1"])
+            min_t2 = min(distances["T2"])
+            if min_t1 < min_t2:
+                framesT1 += 1
+                owner = 1
+            else:
+                framesT2 += 1
+                owner = 2
 
         frames += 1
         team_possession_list.append(owner)
@@ -115,10 +143,8 @@ def CalculatePossession(
 
     return cumulative_possessions, team_possession_list
 
-
 def DistanceBetweenObjects(a, b):
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
-
 
 def GetPossessionPercentage(frames, f1, f2):
     if frames == 0:
