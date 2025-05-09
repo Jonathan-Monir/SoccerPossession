@@ -12,9 +12,9 @@ def CalculatePossession(
     prevBall = None
 
     for i, entry in enumerate(data):
-        frame, ball, players = entry
+        frame, players, ball = entry  # Was: frame, ball, players
 
-        # Normalize empty lists to None and handle invalid types
+        # Rest of your original code remains unchanged
         if isinstance(players, list) and len(players) == 0:
             players = None
         if isinstance(ball, list) and len(ball) == 0:
