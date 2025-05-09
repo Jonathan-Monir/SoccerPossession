@@ -11,35 +11,26 @@ def CalculatePossession(
     team_possession_list = []
     prevBall = None
 
-    for i, tup in enumerate(data):
-        # Expecting a 3-tuple: (frame, x, y)
-        if not isinstance(tup, tuple) or len(tup) != 3:
-            raise ValueError(f"Entry {i} is not a 3-tuple: {tup!r}")
-
-        frame, a, b = tup
-
-        # Decide which of a,b is ball vs players:
-        # - ball is either a dict {"class_id":0,...} or list of such dicts
-        # - players is list of dicts with class_id 1 or 2
-        def looks_like_ball(obj):
-            if isinstance(obj, dict) and obj.get("class_id") == 0:
-                return True
-            if isinstance(obj, list) and obj and isinstance(obj[0], dict) and obj[0].get("class_id") == 0:
-                return True
-            return False
-
-        if looks_like_ball(a):
-            ball, players = a, b
+    for i, entry in enumerate(data):
+        # --- 1) Pull out players & ball ---
+        if isinstance(entry, dict):
+            # original dict format
+            players = entry.get("players")
+            ball = entry.get("ball")
+        elif isinstance(entry, tuple) and len(entry) == 3:
+            # pipeline tuple format
+            _, p, b = entry
+            players, ball = p, b
         else:
-            players, ball = a, b
+            raise ValueError(f"Entry {i} must be dict or 3-tuple, got: {entry!r}")
 
-        # normalize empties
-        if not players:
+        # --- 2) Normalize empties ---
+        if not players:      # covers None or []
             players = None
         if isinstance(ball, list) and len(ball) == 0:
             ball = None
 
-        # skip if no players or first frame with no ball
+        # --- 3) Skip if no players, or first frame & no ball ---
         if players is None or (i == 0 and ball is None):
             cumulative_possessions.append(
                 GetPossessionPercentage(frames, framesT1, framesT2)
@@ -47,23 +38,24 @@ def CalculatePossession(
             team_possession_list.append(None)
             continue
 
+        # --- 4) Handle multiple‐ball detections ---
         prev_pos = prevBall["field_position"] if prevBall else None
-
-        # if multiple ball detections, pick closest to previous (if valid), else first
         if isinstance(ball, list) and len(ball) > 1:
+            # if we have a valid prevBall in bounds, pick closest; else take first
             if prevBall and yardTL[0] <= prev_pos[0] <= yardTR[0] and yardBL[1] <= prev_pos[1] <= yardTL[1]:
-                curr, best_d = ball[0], DistanceBetweenObjects(ball[0]["field_position"], prev_pos)
+                best = ball[0]
+                best_d = DistanceBetweenObjects(best["field_position"], prev_pos)
                 for det in ball[1:]:
                     pos = det["field_position"]
                     if yardTL[0] <= pos[0] <= yardTR[0] and yardBL[1] <= pos[1] <= yardTL[1]:
                         d = DistanceBetweenObjects(pos, prev_pos)
                         if d < best_d:
-                            best_d, curr = d, det
-                ball = curr
+                            best_d, best = d, det
+                ball = best
             else:
                 ball = ball[0]
 
-        # if ball still missing, reuse prevBall if valid
+        # --- 5) If still no ball, maybe reuse prevBall ---
         if ball is None and i > 0:
             if prevBall and yardTL[0] <= prev_pos[0] <= yardTR[0] and yardBL[1] <= prev_pos[1] <= yardTL[1]:
                 ball = prevBall
@@ -74,7 +66,7 @@ def CalculatePossession(
                 team_possession_list.append(None)
                 continue
 
-        # compute distances
+        # --- 6) Compute distances of each team to the ball ---
         distances = {"T1": [], "T2": []}
         for p in players:
             d = DistanceBetweenObjects(p["field_position"], ball["field_position"])
@@ -83,9 +75,9 @@ def CalculatePossession(
             elif p["class_id"] == 2:
                 distances["T2"].append(d)
 
-        prevBall = ball
+        prevBall = ball  # stash for next frame
 
-        # if neither team near ball
+        # --- 7) If neither team detected near the ball, skip update ---
         if not distances["T1"] and not distances["T2"]:
             cumulative_possessions.append(
                 GetPossessionPercentage(frames, framesT1, framesT2)
@@ -93,7 +85,7 @@ def CalculatePossession(
             team_possession_list.append(None)
             continue
 
-        # assign possession
+        # --- 8) Decide possession based on which team is closest (or only one present) ---
         if not distances["T1"]:
             framesT2 += 1
             owner = 2
