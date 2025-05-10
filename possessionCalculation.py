@@ -1,132 +1,146 @@
-import time
-import warnings
-
-warnings.filterwarnings("ignore")
-
-def measure_time(func, *args, process_name="Process"):
-    start = time.time()
-    out = func(*args)
-    print(f"{process_name} took {time.time()-start:.3f}s")
-    return out
-
-def detections_to_dicts(ball_dets, player_dets):
-    balls, players = [], []
-    for b in ball_dets or []:
-        pixel = b.points.mean(axis=0).tolist()
-        fld = coords_to_dict(pixel)["field_position"]
-        balls.append({"field_position": fld})
-    for p in player_dets or []:
-        pixel = p.points.mean(axis=0).tolist()
-        fld = coords_to_dict(pixel)["field_position"]
-        players.append({"field_position": fld, "class_id": p.class_id})
-    return balls, players
-
-def CalculatePossession(data):
-    yardTL, yardTR, yardBL, yardBR = [29.0, 17.0], [45.5, 17.0], [29.0, 26.0], [45.5, 26.0]
-    total = valid_ball = owner1 = owner2 = skipped = 0
-    frames = f1 = f2 = 0
-    poss_list, team_seq = [], []
-    prev = None
+def CalculatePossession(
+    data,
+    yardTL=[0.0, 68.0],
+    yardTR=[105.0, 68.0],
+    yardBL=[0.0, 0.0],
+    yardBR=[105.0, 0.0],
+):
+    frames = 0
+    framesT1 = framesT2 = 0
+    cumulative_possessions = []
+    team_possession_list = []
+    prevBall = None
 
     for i, entry in enumerate(data):
-        # your original unpacking
-        frame, ball, players = entry  
+        frame, ball, players = entry  # Keep original unpacking order
         ball = entry['ball']
         players = entry['players']
 
-        total += 1
-        balls, players = detections_to_dicts(ball, players)
-        ball = ValidateBall(balls)
+        # Validate ball detection
+        ball = ValidateBall(ball)
         players = ValidatePlayers(players)
-        # use bottom-right Y for max_y
-        ball = HandleBallWithValidation(ball, prev, yardTL, yardTR, yardBL, yardBR[1])
 
         print(f"ball::: {ball}")
         print(f"players::: {players}")
         # Handle ball continuity with type checks
-        ball = HandleBallWithValidation(ball, prev, yardTL, yardTR, yardBL, yardTL[1])
+        ball = HandleBallWithValidation(ball, prevBall, yardTL, yardTR, yardBL, yardTL[1])
+
+
         print(f"ball with valid::: {ball}")
         print(f"players with valid::: {players}")
 
         # Process possession only with valid data
         if ball and isinstance(ball, dict) and "field_position" in ball:
-            valid_ball += 1
             owner = GetClosestTeam(ball["field_position"], players)
             if owner == 1:
-                f1 += 1; frames += 1; owner1 += 1
+                framesT1 += 1
+                frames += 1
             elif owner == 2:
-                f2 += 1; frames += 1; owner2 += 1
-            else:
-                skipped += 1
-            team_seq.append(owner)
+                framesT2 += 1
+                frames += 1
+            team_possession_list.append(owner)
         else:
-            skipped += 1
-            team_seq.append(None)
+            team_possession_list.append(None)
 
-        poss_list.append(GetPossessionPercentage(frames, f1, f2))
-        prev = ball if isinstance(ball, dict) else None
+        cumulative_possessions.append(
+            GetPossessionPercentage(frames, framesT1, framesT2)
+        )
+        prevBall = ball if isinstance(ball, dict) else None
 
-    # summary
-    print("\n=== POSSESSION DEBUG SUMMARY ===")
-    print(f"Total frames:        {total}")
-    print(f"Frames with ball:    {valid_ball}")
-    print(f" Team 1 touches:     {owner1}")
-    print(f" Team 2 touches:     {owner2}")
-    print(f" Frames counted:     {frames}")
-    print(f" Frames skipped:     {skipped}")
-    print("================================\n")
-
-    return poss_list, team_seq
+    return cumulative_possessions, team_possession_list
 
 def ValidateBall(ball):
+    """Ensure ball is a valid detection dict"""
     if isinstance(ball, list):
-        for b in ball:
-            if isinstance(b, dict):
-                return b
+        # Return first valid dict detection
+        for det in ball:
+            if isinstance(det, dict) and "field_position" in det:
+                return det
         return None
-    return ball if isinstance(ball, dict) else None
+    if isinstance(ball, dict) and "field_position" in ball:
+        return ball
+    return None
 
 def ValidatePlayers(players):
-    return [p for p in (players or []) if p.get("class_id") in (1,2)]
+    """Filter valid player dicts"""
+    if isinstance(players, list):
+        return [
+            p for p in players
+            if isinstance(p, dict) and 
+            "field_position" in p and 
+            "class_id" in p and 
+            p["class_id"] in {1, 2}
+        ]
+    return None
 
 def HandleBallWithValidation(current_ball, prev_ball, tl, tr, bl, max_y):
     """Safe ball continuity handling"""
-    valid_current = isinstance(current_ball, dict) and "field_position" in current_ball
-    valid_prev    = isinstance(prev_ball, dict)   and "field_position" in prev_ball
+    # Validate current ball
+    valid_current = (
+        isinstance(current_ball, dict) and 
+        "field_position" in current_ball
+    )
+    
+    # Validate previous ball
+    valid_prev = (
+        isinstance(prev_ball, dict) and 
+        "field_position" in prev_ball
+    )
 
+    # Use previous ball if current is invalid
     if not valid_current:
         if valid_prev and IsInBounds(prev_ball["field_position"], tl, tr, bl, max_y):
             return prev_ball
         return None
 
+    # Check current ball position
     current_pos = current_ball["field_position"]
+#     print(f"is valid: {valid_current}, infield: ball{IsInBounds(current_pos,tl,tr,bl,max_y)}")
     if IsInBounds(current_pos, tl, tr, bl, max_y):
         return current_ball
 
+    # Fallback to valid previous ball
     if valid_prev and IsInBounds(prev_ball["field_position"], tl, tr, bl, max_y):
         return prev_ball
     
     return None
 
 def IsInBounds(pos, tl, tr, bl, max_y):
+    print(f"pos: {pos}")
+    print(f"tl: {tl}")
+    print(f"tr: {tr}")
+    print(f"bl: {bl}")
+    print(f"my: {max_y}")
+    """Safe coordinate validation"""
     try:
-        return tl[0] <= pos[0] <= tr[0] and bl[1] <= pos[1] <= max_y
-    except:
+        return (
+            tl[0] <= pos[0] <= tr[0] and 
+            bl[1] <= pos[1] <= max_y
+        )
+    except (TypeError, IndexError):
         return False
 
 def GetClosestTeam(ball_pos, players):
-    best, team = float("inf"), None
+    """Find nearest player to ball"""
+    min_dist = float("inf")
+    closest_team = None
+    
     for p in players:
-        d = ((p["field_position"][0]-ball_pos[0])**2 + 
-             (p["field_position"][1]-ball_pos[1])**2)**0.5
-        if d < best:
-            best, team = d, p["class_id"]
-    return team
+        if not isinstance(p, dict):
+            continue
+        try:
+            p_pos = p["field_position"]
+            dist = ((p_pos[0]-ball_pos[0])**2 + (p_pos[1]-ball_pos[1])**2)**0.5
+            if dist < min_dist:
+                min_dist = dist
+                closest_team = p.get("class_id")
+        except (KeyError, TypeError):
+            continue
+    
+    return closest_team if closest_team in {1, 2} else None
 
 def GetPossessionPercentage(frames, f1, f2):
-    if frames == 0:
-        return {"possT1": 0.0, "possT2": 0.0}
     return {
-        "possT1": round(f1/frames*100, 1),
-        "possT2": round(f2/frames*100, 1)
+        "possT1": round(f1/frames*100, 1) if frames else 0.0,
+        "possT2": round(f2/frames*100, 1) if frames else 0.0
     }
