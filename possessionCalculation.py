@@ -7,7 +7,6 @@ def CalculatePossession(
 ):
     frames = 0
     framesT1 = framesT2 = 0
-    cumulative_possessions = []
     team_possession_list = []
     prevBall = None
 
@@ -20,16 +19,9 @@ def CalculatePossession(
         ball = ValidateBall(ball)
         players = ValidatePlayers(players)
 
-        print(f"ball::: {ball}")
-        print(f"players::: {players}")
-
-        # Handle ball continuity with type checks
+        # Handle ball continuity
         ball = HandleBallWithValidation(ball, prevBall, yardTL, yardTR, yardBL, yardTL[1])
 
-        print(f"ball with valid::: {ball}")
-        print(f"players with valid::: {players}")
-
-        # Process possession only with valid data
         if ball and isinstance(ball, dict) and "field_position" in ball:
             owner = GetClosestTeam(ball["field_position"], players)
             if owner == 1:
@@ -42,12 +34,11 @@ def CalculatePossession(
         else:
             team_possession_list.append(None)
 
-        cumulative_possessions.append(
-            GetPossessionPercentage(frames, framesT1, framesT2)
-        )
         prevBall = ball if isinstance(ball, dict) else None
 
-    return cumulative_possessions, team_possession_list
+    # Return final percentage after all frames
+    final_possession = GetPossessionPercentage(frames, framesT1, framesT2)
+    return final_possession, team_possession_list
 
 def ValidateBall(ball):
     """Ensure ball is a valid detection dict"""
