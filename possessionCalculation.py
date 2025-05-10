@@ -97,11 +97,11 @@ def HandleBallWithValidation(current_ball, prev_ball, tl, tr, bl, max_y):
     return None
 
 def IsInBounds(pos, tl, tr, bl, max_y):
-    print(f"pos: {pos}")
-    print(f"tl: {tl}")
-    print(f"tr: {tr}")
-    print(f"bl: {bl}")
-    print(f"my: {max_y}")
+    #print(f"pos: {pos}")
+    #print(f"tl: {tl}")
+    #print(f"tr: {tr}")
+    #print(f"bl: {bl}")
+    #print(f"my: {max_y}")
     """Safe coordinate validation"""
     try:
         return (
