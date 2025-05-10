@@ -41,6 +41,10 @@ def CalculatePossession(
             team_possession_list.append(owner)
         else:
             team_possession_list.append(None)
+	
+	print("frames" + frames)
+	print("t1" + framesT1)
+	print("t2" + framesT2)
 
         cumulative_possessions.append(
             GetPossessionPercentage(frames, framesT1, framesT2)
