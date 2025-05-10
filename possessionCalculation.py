@@ -145,6 +145,6 @@ def GetClosestTeam(ball_pos, players):
 
 def GetPossessionPercentage(frames, f1, f2):
     return {
-        "possT1": round(f1/frames*100, 1) if frames else 0.0,
-        "possT2": round(f2/frames*100, 1) if frames else 0.0
+        "possT1": round(f1/(f1+f2)*100, 1) if frames else 0.0,
+        "possT2": round(f2/(f1+f2)*100, 1) if frames else 0.0
     }
