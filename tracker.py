@@ -14,6 +14,7 @@ from tracking.inference.converter import Converter
 from tracking.soccer import Match, Player, Team
 from tracking.soccer.draw import AbsolutePath
 # from tracking.soccer.pass_event import Pass
+from fill_miss_tracking import fill_results
 import run_utils as ru
 
 # Video and model paths
@@ -125,17 +126,28 @@ def process_video(yolo_path, video_path, target_fps, last_frame):
         )
 
         # Convert tracked objects back to detections
-        player_detections = Converter.TrackedObjects_to_Detections_nor(
+        player_tracks = Converter.TrackedObjects_to_Detections_nor(
             player_track_objects, cls=1
         )
-        ball_detections = Converter.TrackedObjects_to_Detections_nor(
+        ball_tracks = Converter.TrackedObjects_to_Detections_nor(
             ball_track_objects, cls=0
         )
 
+        if not(ball_tracks):
+            ball_tracks = ball_detections
+
         # Append to results
-        results.append((frame, ball_detections, player_detections))
+        results.append((frame, ball_tracks, player_tracks))
         coord_transformations.append(coord_transformation)
         motion_estimators.append(motion_estimator)
+#         if not(ball_tracks):
+#             print("ball details")
+#             print(type(ball_detections))
+#             print(ball_detections)
+# 
+#             print("player  details")
+#             print(type(player_tracks))
+#             print(player_tracks)
 
     return results, motion_estimators, coord_transformations, video
 

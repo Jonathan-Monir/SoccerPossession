@@ -78,13 +78,11 @@ class CameraCalibrator:
     
 
     def __init__(self, cfg_path, cfg_line_path, kp_model_path, line_model_path):
-        # Check if running in Kaggle environment
-        if os.path.exists('/kaggle/working'):
-            # Adjust paths for Kaggle environment
-            cfg_path = '/kaggle/working/SoccerPossession/' + cfg_path
-            cfg_line_path = '/kaggle/working/SoccerPossession/' + cfg_line_path
-            kp_model_path = '/kaggle/input/' + kp_model_path
-            line_model_path = '/kaggle/input/' + line_model_path
+        # Adjust paths for Kaggle environment
+        cfg_path = '/kaggle/working/SoccerPossession/' + cfg_path
+        cfg_line_path = '/kaggle/working/SoccerPossession/' + cfg_line_path
+        kp_model_path = '/kaggle/input/' + kp_model_path
+        line_model_path = '/kaggle/input/' + line_model_path
 
         # Load configuration and models
         self.cfg = yaml.safe_load(open(cfg_path, 'r'))
@@ -158,9 +156,9 @@ def process_field_transformation(precomputed_results, calibrator_cfgs):
 
         frame_result = {
             "frame_index": frame_idx,
-            "players": players_with_field,
             "ball": {"class_id": 0, "field_position": list(ball_field_position)}
-                    if ball_field_position is not None else None
+                    if ball_field_position is not None else None,
+            "players": players_with_field
         }
         output_results.append(frame_result)
     return output_results

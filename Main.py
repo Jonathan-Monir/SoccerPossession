@@ -29,19 +29,20 @@ def measure_time(func, *args, process_name="Process"):
     return result
 
 # TRACKING
-results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\new18.mp4", 10, 200, process_name="Tracking")
+results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\new18.mp4", 30, 15, process_name="Tracking")
 
 
 motion_estimators = 1
 
 # CLUSTERING
 results_with_class_ids, team1_color, team2_color = measure_time(main_multi_frame, results_tracking, process_name="Clustering")
-
+i = 0
 
 # Ensure team colors are in tuple format for OpenCV
 team1_color = tuple(map(int, team1_color))
 team2_color = tuple(map(int, team2_color))
 _, frames = vid(results_with_class_ids, team1_color=team1_color, team2_color=team2_color)
+
 
 
 # Calibration configuration
@@ -55,16 +56,23 @@ calibrator_cfgs = {
 }
 
 # FIELD TRANSFORMATION
-results = measure_time(process_field_transformation, results_with_class_ids, calibrator_cfgs, kaggle, process_name="Field Transformation")
+results = measure_time(process_field_transformation, results_with_class_ids, calibrator_cfgs, process_name="Field Transformation")
+
+for i, (frame,ball, player) in enumerate(results_tracking):
+    if i <20:
+        print(f"ball: {results_tracking[i][1]}")
+        print(f"player: {results_tracking[i][2]}")
 
 
 
 for i, (frame, ball_detections, player_detections) in enumerate(results_with_class_ids):
     player_detections = yolo_to_norfair_detections(player_detections)
     results_with_class_ids[i] = (frame, ball_detections, player_detections)
-    print(player_detections)
+
 
 # POSSESSION CALCULATION
+
+
 yardTL, yardTR, yardBL, yardBR = [29.0, 17.0], [45.5, 17.0], [29.0, 26.0], [45.5, 26.0]
 
 poss, team_poss_list = measure_time(CalculatePossession, results, yardTL, yardTR, yardBL, yardBR, process_name="Possession Calculation")
