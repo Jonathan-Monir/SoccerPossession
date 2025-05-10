@@ -1,160 +1,132 @@
-def CalculatePossession(data, yardTL=[0.0, 68.0], yardTR=[105.0, 68.0], yardBL=[0.0, 0.0], yardBR=[105.0, 0.0]):
+def CalculatePossession(
+    data,
+    yardTL=[0.0, 68.0],
+    yardTR=[105.0, 68.0],
+    yardBL=[0.0, 0.0],
+    yardBR=[105.0, 0.0],
+):
     frames = 0
     framesT1 = framesT2 = 0
     cumulative_possessions = []
     team_possession_list = []
     prevBall = None
 
-    for i, frame in enumerate(data):
-        distances = { "T1": [], "T2": [] }
-        players = frame["players"]
-        ball = frame["ball"]
+    for i, entry in enumerate(data):
+        frame, players, ball = entry  # Keep original unpacking order
 
-        if players is None or (i == 0 and ball is None):
-            cumulative_possessions.append(GetPossessionPercentage(frames, framesT1, framesT2))
-            team_possession_list.append(None)  # No possession decision available
-            continue
+        # Validate ball detection
+        ball = ValidateBall(ball)
+        players = ValidatePlayers(players)
 
-        prevBall_position = prevBall["field_position"] if prevBall is not None else None
+        # Handle ball continuity with type checks
+        ball = HandleBallWithValidation(ball, prevBall, yardTL, yardTR, yardBL, yardTL[1])
 
-        # Process ball when it's a list (multiple ball detections)
-        if isinstance(ball, list) and len(ball) > 1:
-            if prevBall is not None and prevBall_position[0] >= yardTL[0] and prevBall_position[0] >= yardTR[0] and prevBall_position[1] >= yardTL[1] and prevBall_position[1] <= yardBL[1]:
-                currBall = ball[0]
-                minDist = DistanceBetweenObjects(currBall["field_position"], prevBall_position)
-                for idx, b in enumerate(ball):
-                    if idx == 0:
-                        continue
-                    b_position = b["field_position"]
-                    if b_position[0] >= yardTL[0] and b_position[0] >= yardTR[0] and b_position[1] >= yardTL[1] and b_position[1] <= yardBL[1]:
-                        d = DistanceBetweenObjects(b_position, prevBall_position)
-                        if d < minDist:
-                            minDist = d
-                            currBall = b
-                    else:
-                        ball.pop(idx)
-                ball = currBall
-            else:
-                ball = ball[0]
-
-        # Use previous ball if current ball is missing
-        if i > 0 and frame["ball"] is None:
-            if prevBall is not None and prevBall_position[0] >= yardTL[0] and prevBall_position[0] >= yardTR[0] and prevBall_position[1] >= yardTL[1] and prevBall_position[1] <= yardBL[1]:
-                ball = prevBall
-            else:
-                cumulative_possessions.append(GetPossessionPercentage(frames, framesT1, framesT2))
-                team_possession_list.append(None)
-                continue
-
-        # Calculate distances for each team
-        for player in players:
-            if player["class_id"] == 1:
-                distances["T1"].append(DistanceBetweenObjects(player["field_position"], ball["field_position"]))
-            elif player["class_id"] == 2:
-                distances["T2"].append(DistanceBetweenObjects(player["field_position"], ball["field_position"]))
-
-        prevBall = ball
-
-        distancesT1 = len(distances["T1"])
-        distancesT2 = len(distances["T2"])
-        # If no distances calculated, append current cumulative percentage and skip possession update
-        if distancesT1 == 0 and distancesT2 == 0:
-            cumulative_possessions.append(GetPossessionPercentage(frames, framesT1, framesT2))
-            team_possession_list.append(None)
-            continue
-
-        # Determine possession based on distances
-        if distancesT1 == 0:
-            framesT2 += 1
-            team_possession = 2
-        elif distancesT2 == 0:
-            framesT1 += 1
-            team_possession = 1
-        elif min(distances["T1"]) < min(distances["T2"]):
-            framesT1 += 1
-            team_possession = 1
+        # Process possession only with valid data
+        if ball and isinstance(ball, dict) and "field_position" in ball:
+            owner = GetClosestTeam(ball["field_position"], players)
+            if owner == 1:
+                framesT1 += 1
+                frames += 1
+            elif owner == 2:
+                framesT2 += 1
+                frames += 1
+            team_possession_list.append(owner)
         else:
-            framesT2 += 1
-            team_possession = 2
+            team_possession_list.append(None)
 
-        frames += 1
-        team_possession_list.append(team_possession)
-        cumulative_possessions.append(GetPossessionPercentage(frames, framesT1, framesT2))
+        cumulative_possessions.append(
+            GetPossessionPercentage(frames, framesT1, framesT2)
+        )
+        prevBall = ball if isinstance(ball, dict) else None
 
     return cumulative_possessions, team_possession_list
 
-def DistanceBetweenObjects(player, ball):
-    return ((player[0] - ball[0])**2 + (player[1] - ball[1])**2)**0.5
+def ValidateBall(ball):
+    """Ensure ball is a valid detection dict"""
+    if isinstance(ball, list):
+        # Return first valid dict detection
+        for det in ball:
+            if isinstance(det, dict) and "field_position" in det:
+                return det
+        return None
+    if isinstance(ball, dict) and "field_position" in ball:
+        return ball
+    return None
 
-def GetPossessionPercentage(frames, framesT1, framesT2):
-    if frames == 0:
-        return {"possT1": 0, "possT2": 0}
-    possT1 = (framesT1 / frames) * 100
-    possT2 = (framesT2 / frames) * 100
-    return {"possT1": possT1, "possT2": possT2}
+def ValidatePlayers(players):
+    """Filter valid player dicts"""
+    if isinstance(players, list):
+        return [
+            p for p in players
+            if isinstance(p, dict) and 
+            "field_position" in p and 
+            "class_id" in p and 
+            p["class_id"] in {1, 2}
+        ]
+    return None
 
+def HandleBallWithValidation(current_ball, prev_ball, tl, tr, bl, max_y):
+    """Safe ball continuity handling"""
+    # Validate current ball
+    valid_current = (
+        isinstance(current_ball, dict) and 
+        "field_position" in current_ball
+    )
+    
+    # Validate previous ball
+    valid_prev = (
+        isinstance(prev_ball, dict) and 
+        "field_position" in prev_ball
+    )
 
+    # Use previous ball if current is invalid
+    if not valid_current:
+        if valid_prev and IsInBounds(prev_ball["field_position"], tl, tr, bl, max_y):
+            return prev_ball
+        return None
 
-# data = [
-#     {
-#         "frame_index": 0,
-#         "players": [
-#             {"class_id": 1, "field_position": [62.53, 43.14]},
-#             {"class_id": 1, "field_position": [91.73, 35.23]},
-#             {"class_id": 1, "field_position": [60.05, 36.33]},
-#             {"class_id": 2, "field_position": [66.44, 51.01]},
-#             {"class_id": 2, "field_position": [57.66, 40.67]},
-#             {"class_id": 1, "field_position": [68.74, 23.63]},
-#             {"class_id": 1, "field_position": [70.96, 41.67]},
-#             {"class_id": 2, "field_position": [65.72, 16.64]},
-#             {"class_id": 2, "field_position": [52.59, 38.76]},
-#             {"class_id": 2, "field_position": [72.84, 36.52]}
-#         ],
-#         "ball": {"class_id": 0, "field_position": [62.53, 43.14]}
-#     },
-#     {
-#         "frame_index": 1,
-#         "players": [
-#             {"class_id": 1, "field_position": [62.75, 43.50]},
-#             {"class_id": 1, "field_position": [91.50, 35.10]},
-#             {"class_id": 1, "field_position": [60.20, 36.50]},
-#             {"class_id": 2, "field_position": [66.30, 51.20]},
-#             {"class_id": 2, "field_position": [57.50, 40.80]},
-#             {"class_id": 1, "field_position": [68.90, 23.80]},
-#             {"class_id": 1, "field_position": [71.10, 41.90]},
-#             {"class_id": 2, "field_position": [65.80, 16.80]},
-#             {"class_id": 2, "field_position": [52.40, 38.50]},
-#             {"class_id": 2, "field_position": [72.50, 36.90]}
-#         ],
-#         "ball": [
-#             {"class_id": 0, "field_position": [78.10, 29.00]},
-#             {"class_id": 0, "field_position": [56.00, 44.80]}
-#         ]
-#     },
-#     {
-#         "frame_index": 2,
-#         "players": [
-#             {"class_id": 1, "field_position": [63.00, 43.80]},
-#             {"class_id": 1, "field_position": [91.20, 35.00]},
-#             {"class_id": 1, "field_position": [60.40, 36.60]},
-#             {"class_id": 2, "field_position": [66.10, 51.40]},
-#             {"class_id": 2, "field_position": [57.30, 40.90]},
-#             {"class_id": 1, "field_position": [69.10, 24.00]},
-#             {"class_id": 1, "field_position": [71.30, 42.10]},
-#             {"class_id": 2, "field_position": [65.90, 17.00]},
-#             {"class_id": 2, "field_position": [52.20, 38.30]},
-#             {"class_id": 2, "field_position": [72.20, 37.20]}
-#         ],
-#         "ball": [
-#             {"class_id": 0, "field_position": [78.80, 29.50]},
-#             {"class_id": 0, "field_position": [56.80, 44.20]}
-#         ]
-#     }
-# ]
-# data = None
+    # Check current ball position
+    current_pos = current_ball["field_position"]
+    if IsInBounds(current_pos, tl, tr, bl, max_y):
+        return current_ball
 
+    # Fallback to valid previous ball
+    if valid_prev and IsInBounds(prev_ball["field_position"], tl, tr, bl, max_y):
+        return prev_ball
+    
+    return None
 
+def IsInBounds(pos, tl, tr, bl, max_y):
+    """Safe coordinate validation"""
+    try:
+        return (
+            tl[0] <= pos[0] <= tr[0] and 
+            bl[1] <= pos[1] <= max_y
+        )
+    except (TypeError, IndexError):
+        return False
 
-# yardTL, yardTR, yardBL, yardBR = [29.0, 17.0], [45.5, 17.0], [29.0, 26.0], [45.5, 26.0]
-# poss = CaculatePossession(data, yardTL, yardTR, yardBL, yardBR)
-# print(poss)
+def GetClosestTeam(ball_pos, players):
+    """Find nearest player to ball"""
+    min_dist = float("inf")
+    closest_team = None
+    
+    for p in players:
+        if not isinstance(p, dict):
+            continue
+        try:
+            p_pos = p["field_position"]
+            dist = ((p_pos[0]-ball_pos[0])**2 + (p_pos[1]-ball_pos[1])**2)**0.5
+            if dist < min_dist:
+                min_dist = dist
+                closest_team = p.get("class_id")
+        except (KeyError, TypeError):
+            continue
+    
+    return closest_team if closest_team in {1, 2} else None
+
+def GetPossessionPercentage(frames, f1, f2):
+    return {
+        "possT1": round(f1/frames*100, 1) if frames else 0.0,
+        "possT2": round(f2/frames*100, 1) if frames else 0.0
+    }
