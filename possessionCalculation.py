@@ -22,9 +22,9 @@ def CalculatePossession(
 
         print(f"ball::: {ball}")
         print(f"players::: {players}")
+
         # Handle ball continuity with type checks
         ball = HandleBallWithValidation(ball, prevBall, yardTL, yardTR, yardBL, yardTL[1])
-
 
         print(f"ball with valid::: {ball}")
         print(f"players with valid::: {players}")
@@ -41,11 +41,10 @@ def CalculatePossession(
             team_possession_list.append(owner)
         else:
             team_possession_list.append(None)
-	
-	print(f"frames: {frames}")
-	print(f"t1: {framesT1}")
-	print(f"t2: {framesT2}")
 
+        print(f"framessssssssssssss: {frames}")
+        print(f"ttttttttttttttttt1: {framesT1}")
+        print(f"tttttttttttttttttttt2: {framesT2}")
 
         cumulative_possessions.append(
             GetPossessionPercentage(frames, framesT1, framesT2)
