@@ -78,7 +78,6 @@ class CameraCalibrator:
     
 
     def __init__(self, cfg_path, cfg_line_path, kp_model_path, line_model_path):
-        # Check if running in Kaggle environment
         if os.path.exists('kaggle/working'):
             # Adjust paths for Kaggle environment
             cfg_path = '/kaggle/working/SoccerPossession/' + cfg_path
