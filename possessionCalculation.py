@@ -42,10 +42,6 @@ def CalculatePossession(
         else:
             team_possession_list.append(None)
 
-        print(f"framessssssssssssss: {frames}")
-        print(f"ttttttttttttttttt1: {framesT1}")
-        print(f"tttttttttttttttttttt2: {framesT2}")
-
         cumulative_possessions.append(
             GetPossessionPercentage(frames, framesT1, framesT2)
         )
@@ -144,6 +140,13 @@ def GetClosestTeam(ball_pos, players):
     return closest_team if closest_team in {1, 2} else None
 
 def GetPossessionPercentage(frames, f1, f2):
+	
+    print(f"framessssssssssssss: {frames}")
+    print(f"ttttttttttttttttt1: {f1}")
+    print(f"tttttttttttttttttttt2: {f2}")
+    print(f"nooooooooooooo1: { round(f1/(f1+f2)*100, 1)}")
+    print(f"noooooooooooooo2: {round(f2/(f1+f2)*100, 1)}")
+
     return {
         "possT1": round(f1/(f1+f2)*100, 1) if frames else 0.0,
         "possT2": round(f2/(f1+f2)*100, 1) if frames else 0.0
