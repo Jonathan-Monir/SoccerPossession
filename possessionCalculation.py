@@ -43,7 +43,14 @@ def CalculatePossession(
         # 2) validate & handle continuity
         ball = ValidateBall(ball_list)
         players = ValidatePlayers(players_list)
-        ball = HandleBallWithValidation(ball, prevBall, yardTL, yardTR, yardBL, yardTL[1])
+        ball = HandleBallWithValidation(
+            ball,
+            prevBall,
+            yardTL,
+            yardTR,
+            yardBL,
+            yardBR[1],    # bottom‐right Y (e.g. 26.0)
+        )
 
         # 3) possession logic
         if ball and isinstance(ball, dict):
