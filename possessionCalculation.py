@@ -1,5 +1,6 @@
     for i, entry in enumerate(data):
-        frame, players, ball = entry
+        frame, ball, players = entry
+
 
         ball = ValidateBall(ball)
         players = ValidatePlayers(players)
