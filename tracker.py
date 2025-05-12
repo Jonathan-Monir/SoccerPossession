@@ -1,22 +1,29 @@
-import os
-import cv2
-import numpy as np
-import PIL
-from ultralytics import YOLO
-from norfair import Tracker
-from norfair.camera_motion import MotionEstimator
-from norfair.distances import mean_euclidean
-from preprosses import compute_noise, apply_nlm_denoising
+
 import torch
-from norfair import Tracker, Video
-from tracking.inference.converter import Converter
-# from tracking.inference import Converter
-from tracking.soccer import Match, Player, Team
-from tracking.soccer.draw import AbsolutePath
-# from tracking.soccer.pass_event import Pass
-from fill_miss_tracking import fill_results
+import cv2
+from ultralytics import YOLO
 from your_utils import ru, Tracker, MotionEstimator, Converter, Video, mean_euclidean
-import run_utils as ru
+
+import torch
+import cv2
+from ultralytics import YOLO
+# Replace the following imports with your actual utility modules
+# e.g., if your project has ru.py, tracker.py, motion.py, converter.py, video.py, import them accordingly
+# Example:
+# import ru
+# from tracker import Tracker
+# from motion_estimator import MotionEstimator
+# from converter import Converter
+# from video import Video
+# from utils import mean_euclidean
+
+# For now, assuming all utilities are in modules named appropriately:
+import ru
+from tracker import Tracker
+from motion_estimator import MotionEstimator
+from converter import Converter
+from video import Video
+from utils import mean_euclidean
 
 # Video and model paths
 video_path = "manc.mp4"
@@ -43,11 +50,6 @@ def delete_file(file_path):
         print(f"File not found: {file_path}")
 
 
-
-import torch
-import cv2
-from ultralytics import YOLO
-from your_utils import ru, Tracker, MotionEstimator, Converter, Video, mean_euclidean
 
 def process_video(yolo_path, video_path, target_fps, last_frame, batch_size=8):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
