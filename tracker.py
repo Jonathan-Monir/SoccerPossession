@@ -43,6 +43,11 @@ def delete_file(file_path):
 
 
 
+import torch
+import cv2
+from ultralytics import YOLO
+from your_utils import ru, Tracker, MotionEstimator, Converter, Video, mean_euclidean
+
 def process_video(yolo_path, video_path, target_fps, last_frame, batch_size=8):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     coord_transformations, motion_estimators = [], []
@@ -99,9 +104,11 @@ def process_video(yolo_path, video_path, target_fps, last_frame, batch_size=8):
                 frame_idx = frame_indices[idx_in_batch]
                 frame = batch_frames[idx_in_batch]
 
-                # Class-based filtering
-                ball_detections = [d for d, c in zip(result.boxes.xyxy, result.boxes.cls) if int(c) == 0 and float(d[4]) >= 0.3]
-                player_detections = [d for d, c in zip(result.boxes.xyxy, result.boxes.cls) if int(c) == 1 and float(d[4]) >= 0.35]
+                # Use .boxes.data: [x1, y1, x2, y2, conf, cls]
+                data = result.boxes.data.cpu().numpy()
+                # Separate detections by class with thresholds
+                ball_detections = [d[:5].tolist() for d in data if int(d[5]) == 0 and d[4] >= 0.3]
+                player_detections = [d[:5].tolist() for d in data if int(d[5]) == 1 and d[4] >= 0.35]
 
                 # Motion estimation update
                 detections = ball_detections + player_detections
