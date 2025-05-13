@@ -29,7 +29,7 @@ def measure_time(func, *args, process_name="Process"):
     return result
 
 # TRACKING
-results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\nemo.mp4", 20, 5.0, 7.0, process_name="Tracking")
+results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\nemo.mp4", 10, 5.0, 5.3, process_name="Tracking")
 
 
 motion_estimators = 1
