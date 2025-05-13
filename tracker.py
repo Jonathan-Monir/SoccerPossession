@@ -1,9 +1,3 @@
-
-import torch
-import cv2
-from ultralytics import YOLO
-from your_utils import ru, Tracker, MotionEstimator, Converter, Video, mean_euclidean
-
 import torch
 import cv2
 from ultralytics import YOLO
@@ -24,32 +18,6 @@ from motion_estimator import MotionEstimator
 from converter import Converter
 from video import Video
 from utils import mean_euclidean
-
-# Video and model paths
-video_path = "manc.mp4"
-fps = 10  # Target FPS for extraction
-
-
-"""# Helpful functions"""
-
-
-def delete_file(file_path):
-    """
-    Deletes the file at the specified file_path.
-
-    Args:
-        file_path (str): The path to the file to be deleted.
-    """
-    if os.path.isfile(file_path):
-        try:
-            os.remove(file_path)
-            print(f"Deleted file: {file_path}")
-        except Exception as e:
-            print(f"An error occurred while deleting the file: {e}")
-    else:
-        print(f"File not found: {file_path}")
-
-
 
 def process_video(yolo_path, video_path, target_fps, last_frame, batch_size=8):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -142,7 +110,6 @@ def process_video(yolo_path, video_path, target_fps, last_frame, batch_size=8):
             frame_indices.clear()
 
     return results, motion_estimators, coord_transformations, video
-
 
 if __name__ == "__main__":
     process_video("yolo8.pt", "jooooooooo.mp4", 30)
