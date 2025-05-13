@@ -43,7 +43,7 @@ def delete_file(file_path):
 
 
 
-def process_video(yolo_path, video_path, target_fps, last_frame, batch_size=16):
+def process_video(yolo_path, video_path, target_fps, last_frame, batch_size=2):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     coord_transformations = []
     motion_estimators = []
