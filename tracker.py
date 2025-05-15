@@ -176,7 +176,7 @@ def process_video(yolo_path: str,
             continue
         elif not(player_tracks):
             player_tracks = player_detections
-        elif len(player_detections<5):
+        elif len(player_detections)<5:
             continue
 
         # Collect results
