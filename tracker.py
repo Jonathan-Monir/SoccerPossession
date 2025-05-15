@@ -162,9 +162,22 @@ def process_video(yolo_path: str,
             ball_track_objects,
             cls=0
         )
+
+
+
         # Fallback if ball not detected
-        if not ball_tracks:
+        if not(ball_tracks) and not(ball_detections):
+            continue
+        elif not(ball_tracks):
             ball_tracks = ball_detections
+
+
+        if not(player_tracks) and not(player_detections):
+            continue
+        elif not(player_tracks):
+            player_tracks = player_detections
+        elif len(player_detections<5):
+            continue
 
         # Collect results
         results.append((frame, ball_tracks, player_tracks))
