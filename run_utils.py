@@ -955,7 +955,7 @@ def get_detections(yolov11_detector, frame: np.ndarray, class_id: int, confidenc
     """
     h, w = frame.shape[:2]
     imgsz = max(h, w)
-    results = yolov11_detector.predict(frame, imgsz=imgsz)
+    results = yolov11_detector.predict(frame, imgsz=imgsz, verbose=False)
     detections = []
     for result in results:
         # Filter boxes by class ID and confidence threshold
