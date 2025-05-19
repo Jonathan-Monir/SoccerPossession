@@ -103,64 +103,80 @@ class CameraCalibrator:
         P = inf.projection_from_cam_params(final_params_dict)
         return P
 
+
 def process_field_transformation(precomputed_results, calibrator_cfgs):
     """
-    precomputed_results: list of tuples
-       Each tuple is (frame_image, <ignored>, detections)
-       Each detection is a list:
-         [class_id, x_min, y_min, x_max, y_max]
-         where class_id is 0 for ball and 1 or 2 for player teams.
-         
-    calibrator_cfgs: dictionary containing the paths and thresholds for calibration.
+    Keep trying frames until calibrating succeeds (i.e., until frame contains enough field lines).
     """
-    # Use the first frame for calibration.
-    first_frame = precomputed_results[0][0]
-    frame_height, frame_width = first_frame.shape[:2]
-    
-    # Setup calibration.
-    cam = inf.FramebyFrameCalib(iwidth=frame_width, iheight=frame_height, denormalize=True)
-    calibrator = CameraCalibrator(calibrator_cfgs["cfg_path"],
-                                  calibrator_cfgs["cfg_line_path"],
-                                  calibrator_cfgs["kp_model_path"],
-                                  calibrator_cfgs["line_model_path"])
+    cam = None
+    transformer = None
+
+    # Prepare calibrator
+    first_h, first_w = precomputed_results[0][0].shape[:2]
+    cam = inf.FramebyFrameCalib(iwidth=first_w, iheight=first_h, denormalize=True)
+    calibrator = CameraCalibrator(
+        calibrator_cfgs["cfg_path"],
+        calibrator_cfgs["cfg_line_path"],
+        calibrator_cfgs["kp_model_path"],
+        calibrator_cfgs["line_model_path"]
+    )
     kp_threshold = calibrator_cfgs["kp_threshold"]
     line_threshold = calibrator_cfgs["line_threshold"]
 
-    # Calibrate using the first frame.
-    P = calibrator.calibrate(first_frame, cam, kp_threshold, line_threshold)
+    # Try calibration on frames until success
+    P = None
+    for idx, (frame, _, _) in enumerate(precomputed_results):
+        try:
+            print(f"Attempting calibration on frame {idx}...")
+            P_candidate = calibrator.calibrate(frame, cam, kp_threshold, line_threshold)
+
+            # Check that P_candidate is valid (3x4, no NaNs)
+            if P_candidate.shape == (3, 4) and not np.isnan(P_candidate).any():
+                P = P_candidate
+                print(f"Calibration succeeded on frame {idx}.")
+                break
+            else:
+                print(f"Invalid P on frame {idx}, trying next.")
+        except Exception as e:
+            print(f"Calibration error on frame {idx}: {e}, trying next...")
+            continue
+
+    if P is None:
+        raise RuntimeError("Unable to calibrate on any frame: no valid field detected.")
+
+    # Build transformer
     H = FieldTransformer.compute_homography(P)
     H_inv = np.linalg.inv(H)
     transformer = FieldTransformer(H_inv)
 
+    # Now process all frames with the established transformer
     output_results = []
-    # Process each frame.
     for frame_idx, (frame, _, detections) in enumerate(precomputed_results):
         players_with_field = []
         ball_field_position = None
 
         for detection in detections:
-            # detection: [class_id, x_min, y_min, x_max, y_max]
             class_id = int(detection[0])
-            bbox = [float(coord) for coord in detection[1:]]  # [x_min, y_min, x_max, y_max]
-            if class_id in [1, 2]:  # players (already classified)
-                field_pos = transformer.image_to_field_point(bbox)
-                if field_pos:
-                    players_with_field.append({
-                        "class_id": class_id,
-                        "field_position": list(field_pos)
-                    })
-            elif class_id == 0:  # ball detection
-                field_pos = transformer.image_to_field_point(bbox)
-                if field_pos:
+            bbox = [float(c) for c in detection[1:]]
+            field_pos = transformer.image_to_field_point(bbox)
+            if field_pos:
+                entry = {
+                    "class_id": class_id,
+                    "field_position": list(field_pos)
+                }
+                if class_id == 0:
                     ball_field_position = field_pos
+                else:
+                    players_with_field.append(entry)
 
         frame_result = {
             "frame_index": frame_idx,
-            "ball": {"class_id": 0, "field_position": list(ball_field_position)}
+            "ball": {"class_id": 0, "field_position": list(ball_field_position)} 
                     if ball_field_position is not None else None,
             "players": players_with_field
         }
         output_results.append(frame_result)
+
     return output_results
 
 def main():

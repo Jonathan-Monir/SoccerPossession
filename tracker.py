@@ -69,7 +69,6 @@ def process_video(yolo_path: str,
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     coord_transformations = []
     motion_estimators = []
-    print()
 
     # Initialize detectors and trackers
     yolo_detector = YOLO(yolo_path)

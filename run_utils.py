@@ -932,6 +932,13 @@ class Ball:
     def __str__(self):
         return f"Ball: {self.center}"
 
+def adjust_imgsz(imgsz, stride=32):
+    # Ensure imgsz is a list
+    if isinstance(imgsz, int):
+        imgsz = [imgsz]
+    # Round up each dimension to the nearest multiple of stride
+    adjusted = [((size + stride - 1) // stride) * stride for size in imgsz]
+    return adjusted
 
 def get_detections(yolov11_detector, frame: np.ndarray, class_id: int, confidence_threshold: float) -> List[norfair.Detection]:
     """
@@ -955,6 +962,8 @@ def get_detections(yolov11_detector, frame: np.ndarray, class_id: int, confidenc
     """
     h, w = frame.shape[:2]
     imgsz = max(h, w)
+     
+    imgsz = adjust_imgsz(imgsz)  # or imgsz = adjust_imgsz(imgsz)
     results = yolov11_detector.predict(frame, imgsz=imgsz, verbose=False)
     detections = []
     for result in results:
