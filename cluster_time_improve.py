@@ -624,7 +624,7 @@ def main_multi_frame(results_tracking):
             x2, y2 = map(int, box.points[1])
             box_idx = boxes_refs.index((x1, y1, x2, y2))
             class_id = cluster_labels[box_idx]
-            new_boxes.append([*box, class_id])
+            new_boxes.append([x1, y1, x2, y2, class_id])
         results_with_class_ids.append((frame, [], new_boxes))
 
     # Estimate team colors
