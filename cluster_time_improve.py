@@ -628,7 +628,13 @@ def main_multi_frame(results_tracking):
         results_with_class_ids.append((frame, [], new_boxes))
 
     # Estimate team colors
-    team1_color = get_dominant_color(player_crops[cluster_labels.index(0)])
-    team2_color = get_dominant_color(player_crops[cluster_labels.index(1)])
+    import numpy as np
+
+    team1_crop = player_crops[np.where(cluster_labels == 0)[0][0]]
+    team2_crop = player_crops[np.where(cluster_labels == 1)[0][0]]
+
+    team1_color = get_dominant_color(team1_crop)
+    team2_color = get_dominant_color(team2_crop)
+
 
     return results_with_class_ids, team1_color, team2_color
