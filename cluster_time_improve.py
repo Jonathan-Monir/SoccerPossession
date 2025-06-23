@@ -583,25 +583,47 @@ def extract_features(image):
         features = model(image).squeeze().numpy()
     return features
 
-def get_dominant_color(image):
-    if isinstance(image, np.ndarray):
-        image = Image.fromarray(image)
+def get_dominant_color_batch(images, n_samples=10):
+    """Estimate dominant color from a batch of player crops"""
+    dominant_colors = []
 
-    img = image.resize((50, 50))
-    np_img = np.array(img).reshape(-1, 3)
+    for img in images[:n_samples]:
+        if isinstance(img, np.ndarray):
+            image = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+        else:
+            image = img
 
-    # Optional: Filter out green pixels that may represent grass
-    mask = ~((np_img[:, 1] > np_img[:, 0] + 20) & (np_img[:, 1] > np_img[:, 2] + 20))
-    np_img = np_img[mask]
+        # Focus on center part
+        w, h = image.size
+        left = int(w * 0.2)
+        right = int(w * 0.8)
+        top = int(h * 0.3)
+        bottom = int(h * 0.7)
+        image = image.crop((left, top, right, bottom))
+        image = image.resize((30, 30))
 
-    # In case all pixels are filtered out
-    if len(np_img) == 0:
-        np_img = np.array(img).reshape(-1, 3)
+        # Convert to NumPy array
+        np_img = np.array(image).reshape(-1, 3)
 
-    kmeans = KMeans(n_clusters=1, n_init="auto")
-    kmeans.fit(np_img)
-    dominant_color = kmeans.cluster_centers_[0]
-    return tuple(dominant_color.astype(int))
+        # Remove very dark/light/greenish pixels
+        mask = (
+            (np_img[:, 0] > 40) & (np_img[:, 1] > 40) & (np_img[:, 2] > 40) &  # Not too dark
+            (np_img[:, 0] < 220) & (np_img[:, 1] < 220) & (np_img[:, 2] < 220) &  # Not too bright
+            ~((np_img[:, 1] > np_img[:, 0] + 20) & (np_img[:, 1] > np_img[:, 2] + 20))  # Not green
+        )
+
+        filtered = np_img[mask]
+        if len(filtered) == 0:
+            filtered = np_img  # fallback
+
+        kmeans = KMeans(n_clusters=1, n_init="auto")
+        kmeans.fit(filtered)
+        dominant_colors.append(kmeans.cluster_centers_[0])
+
+    # Average over all dominant colors
+    mean_color = np.mean(dominant_colors, axis=0)
+    return tuple(mean_color.astype(int))
+
 
 def main_multi_frame(results_tracking):
     player_crops = []
@@ -644,10 +666,10 @@ def main_multi_frame(results_tracking):
         results_with_class_ids.append((frame, [], new_boxes))
 
     # Estimate team colors using first confident samples
-    team1_crop = player_crops[np.where(cluster_labels == 0)[0][0]]
-    team2_crop = player_crops[np.where(cluster_labels == 1)[0][0]]
+    team1_indices = np.where(cluster_labels == 0)[0]
+    team2_indices = np.where(cluster_labels == 1)[0]
 
-    team1_color = get_dominant_color(team1_crop)
-    team2_color = get_dominant_color(team2_crop)
+    team1_color = get_dominant_color_batch([player_crops[i] for i in team1_indices])
+    team2_color = get_dominant_color_batch([player_crops[i] for i in team2_indices])
 
     return results_with_class_ids, team1_color, team2_color
