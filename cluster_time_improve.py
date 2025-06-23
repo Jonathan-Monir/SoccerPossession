@@ -624,52 +624,124 @@ def get_dominant_color_batch(images, n_samples=10):
     mean_color = np.mean(dominant_colors, axis=0)
     return tuple(mean_color.astype(int))
 
+import numpy as np
+from PIL import Image
+from sklearn.cluster import KMeans
+from torchvision import models, transforms
+import torch
+import cv2
+
+# Load pre-trained model for feature extraction
+model = models.resnet18(pretrained=True)
+model = torch.nn.Sequential(*list(model.children())[:-1])
+model.eval()
+
+# Image transform
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406], 
+                         [0.229, 0.224, 0.225])
+])
+
+def extract_features(image):
+    if isinstance(image, np.ndarray):
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = Image.fromarray(image)
+
+    image_tensor = transform(image).unsqueeze(0)
+    with torch.no_grad():
+        features = model(image_tensor).squeeze().numpy()
+    return features
+
+
+def get_dominant_color(image):
+    if isinstance(image, np.ndarray):
+        image = Image.fromarray(image)
+    
+    # Focus on the central region to avoid grass or arms
+    width, height = image.size
+    left = width // 4
+    top = height // 4
+    right = 3 * width // 4
+    bottom = 3 * height // 4
+    center_crop = image.crop((left, top, right, bottom))
+
+    resized = center_crop.resize((50, 50))
+    np_img = np.array(resized).reshape(-1, 3)
+
+    # Cluster to get dominant color
+    kmeans = KMeans(n_clusters=1, n_init='auto')
+    kmeans.fit(np_img)
+    dominant_color = kmeans.cluster_centers_[0]
+    return tuple(dominant_color.astype(int))
+
 
 def main_multi_frame(results_tracking):
     player_crops = []
     frame_refs = []
     boxes_refs = []
 
+    print("=== Step 2: Clustering ===")
     for frame_idx, (frame, _, player_boxes) in enumerate(results_tracking):
         for box in player_boxes:
             x1, y1 = map(int, box.points[0])
             x2, y2 = map(int, box.points[1])
-            h = y2 - y1
+            if x2 > x1 and y2 > y1:
+                crop = frame[y1:y2, x1:x2]
+                if crop.shape[0] > 10 and crop.shape[1] > 10:
+                    player_crops.append(crop)
+                    frame_refs.append(frame_idx)
+                    boxes_refs.append((x1, y1, x2, y2))
 
-            # Focus on center 60% (avoid head/legs/grass)
-            y1_new = y1 + int(0.2 * h)
-            y2_new = y2 - int(0.2 * h)
-
-            crop = frame[y1_new:y2_new, x1:x2]  # BGR crop (OpenCV)
-            player_crops.append(crop)
-            frame_refs.append(frame_idx)
-            boxes_refs.append((x1, y1, x2, y2))
+    assert len(player_crops) > 0, "No valid player crops found."
+    print(f"Collected {len(player_crops)} valid player crops.")
 
     # Extract features
-    features = [extract_features(img) for img in player_crops]
+    features = []
+    for idx, img in enumerate(player_crops):
+        try:
+            features.append(extract_features(img))
+        except Exception as e:
+            print(f"Feature extraction failed for crop {idx}: {e}")
+            continue
 
-    # Cluster
-    kmeans = KMeans(n_clusters=2, random_state=0)
+    features = np.array(features)
+    print("Feature shape:", features.shape)
+
+    # Clustering
+    kmeans = KMeans(n_clusters=2, random_state=42, n_init='auto')
     cluster_labels = kmeans.fit_predict(features)
+    print("Cluster label distribution:", np.bincount(cluster_labels))
 
-    # Reconstruct results_with_class_ids format
+    # Prepare results_with_class_ids
     results_with_class_ids = []
-    index = 0
-    for idx, (frame, _, player_boxes) in enumerate(results_tracking):
+    crop_index = 0
+
+    for frame_idx, (frame, _, player_boxes) in enumerate(results_tracking):
         new_boxes = []
         for box in player_boxes:
             x1, y1 = map(int, box.points[0])
             x2, y2 = map(int, box.points[1])
-            class_id = cluster_labels[index]
-            new_boxes.append([x1, y1, x2, y2, class_id])
-            index += 1
+            if (x1, y1, x2, y2) in boxes_refs:
+                box_idx = boxes_refs.index((x1, y1, x2, y2))
+                class_id = cluster_labels[box_idx]
+                new_boxes.append([x1, y1, x2, y2, class_id])
         results_with_class_ids.append((frame, [], new_boxes))
 
-    # Estimate team colors using first confident samples
-    team1_indices = np.where(cluster_labels == 0)[0]
-    team2_indices = np.where(cluster_labels == 1)[0]
+    # Extract one crop from each cluster to estimate team color
+    team1_idx = np.where(cluster_labels == 0)[0]
+    team2_idx = np.where(cluster_labels == 1)[0]
+    
+    assert len(team1_idx) > 0 and len(team2_idx) > 0, "One of the clusters is empty."
 
-    team1_color = get_dominant_color_batch([player_crops[i] for i in team1_indices])
-    team2_color = get_dominant_color_batch([player_crops[i] for i in team2_indices])
+    team1_crop = player_crops[team1_idx[0]]
+    team2_crop = player_crops[team2_idx[0]]
+
+    team1_color = get_dominant_color(team1_crop)
+    team2_color = get_dominant_color(team2_crop)
+
+    print(f"Team 1 dominant color: {team1_color}")
+    print(f"Team 2 dominant color: {team2_color}")
 
     return results_with_class_ids, team1_color, team2_color
