@@ -571,11 +571,20 @@ transform = transforms.Compose([
                          [0.229, 0.224, 0.225])
 ])
 
+from PIL import Image
+import cv2
+
 def extract_features(image):
+    if isinstance(image, np.ndarray):
+        # Convert BGR (OpenCV) to RGB for PIL
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = Image.fromarray(image)
+
     with torch.no_grad():
         image = transform(image).unsqueeze(0)  # shape: [1, 3, 224, 224]
         features = model(image).squeeze().numpy()  # shape: [512]
     return features
+
 
 def get_dominant_color(image):
     # Resize and convert to numpy
