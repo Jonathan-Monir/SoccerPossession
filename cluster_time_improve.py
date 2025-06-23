@@ -594,7 +594,7 @@ def main_multi_frame(results_tracking):
         for box in player_boxes:
             x1, y1 = map(int, box.points[0])
             x2, y2 = map(int, box.points[1])
-            crop = frame.crop((x1, y1, x2, y2))
+            crop = frame[y1:y2, x1:x2]
             player_crops.append(crop)
             frame_refs.append(frame_idx)
             boxes_refs.append((x1, y1, x2, y2))
