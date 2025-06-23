@@ -558,6 +558,7 @@ import torch
 import numpy as np
 from sklearn.cluster import KMeans
 from PIL import Image
+import cv2
 
 # Setup model for feature extraction
 model = models.resnet18(pretrained=True)
@@ -567,35 +568,37 @@ model.eval()
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], 
+    transforms.Normalize([0.485, 0.456, 0.406],
                          [0.229, 0.224, 0.225])
 ])
 
-from PIL import Image
-import cv2
-
 def extract_features(image):
     if isinstance(image, np.ndarray):
-        # Convert BGR (OpenCV) to RGB for PIL
+        # Convert BGR (OpenCV) to RGB
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = Image.fromarray(image)
 
     with torch.no_grad():
-        image = transform(image).unsqueeze(0)  # shape: [1, 3, 224, 224]
-        features = model(image).squeeze().numpy()  # shape: [512]
+        image = transform(image).unsqueeze(0)
+        features = model(image).squeeze().numpy()
     return features
 
-
-from PIL import Image
-
 def get_dominant_color(image):
-    # Ensure the input is a PIL Image
     if isinstance(image, np.ndarray):
         image = Image.fromarray(image)
 
-    img = image.resize((50, 50))  # Resize for faster clustering
-    np_img = np.array(img).reshape(-1, 3)  # Flatten to (N, 3)
-    kmeans = KMeans(n_clusters=1)
+    img = image.resize((50, 50))
+    np_img = np.array(img).reshape(-1, 3)
+
+    # Optional: Filter out green pixels that may represent grass
+    mask = ~((np_img[:, 1] > np_img[:, 0] + 20) & (np_img[:, 1] > np_img[:, 2] + 20))
+    np_img = np_img[mask]
+
+    # In case all pixels are filtered out
+    if len(np_img) == 0:
+        np_img = np.array(img).reshape(-1, 3)
+
+    kmeans = KMeans(n_clusters=1, n_init="auto")
     kmeans.fit(np_img)
     dominant_color = kmeans.cluster_centers_[0]
     return tuple(dominant_color.astype(int))
@@ -609,7 +612,13 @@ def main_multi_frame(results_tracking):
         for box in player_boxes:
             x1, y1 = map(int, box.points[0])
             x2, y2 = map(int, box.points[1])
-            crop = frame[y1:y2, x1:x2]
+            h = y2 - y1
+
+            # Focus on center 60% (avoid head/legs/grass)
+            y1_new = y1 + int(0.2 * h)
+            y2_new = y2 - int(0.2 * h)
+
+            crop = frame[y1_new:y2_new, x1:x2]  # BGR crop (OpenCV)
             player_crops.append(crop)
             frame_refs.append(frame_idx)
             boxes_refs.append((x1, y1, x2, y2))
@@ -623,24 +632,22 @@ def main_multi_frame(results_tracking):
 
     # Reconstruct results_with_class_ids format
     results_with_class_ids = []
+    index = 0
     for idx, (frame, _, player_boxes) in enumerate(results_tracking):
         new_boxes = []
         for box in player_boxes:
             x1, y1 = map(int, box.points[0])
             x2, y2 = map(int, box.points[1])
-            box_idx = boxes_refs.index((x1, y1, x2, y2))
-            class_id = cluster_labels[box_idx]
+            class_id = cluster_labels[index]
             new_boxes.append([x1, y1, x2, y2, class_id])
+            index += 1
         results_with_class_ids.append((frame, [], new_boxes))
 
-    # Estimate team colors
-    import numpy as np
-
+    # Estimate team colors using first confident samples
     team1_crop = player_crops[np.where(cluster_labels == 0)[0][0]]
     team2_crop = player_crops[np.where(cluster_labels == 1)[0][0]]
 
     team1_color = get_dominant_color(team1_crop)
     team2_color = get_dominant_color(team2_crop)
-
 
     return results_with_class_ids, team1_color, team2_color
