@@ -586,13 +586,19 @@ def extract_features(image):
     return features
 
 
+from PIL import Image
+
 def get_dominant_color(image):
-    # Resize and convert to numpy
-    img = image.resize((50, 50))
-    np_img = np.array(img).reshape(-1, 3)
+    # Ensure the input is a PIL Image
+    if isinstance(image, np.ndarray):
+        image = Image.fromarray(image)
+
+    img = image.resize((50, 50))  # Resize for faster clustering
+    np_img = np.array(img).reshape(-1, 3)  # Flatten to (N, 3)
     kmeans = KMeans(n_clusters=1)
-    dominant_color = kmeans.fit(np_img).cluster_centers_[0]
-    return tuple(map(int, dominant_color))
+    kmeans.fit(np_img)
+    dominant_color = kmeans.cluster_centers_[0]
+    return tuple(dominant_color.astype(int))
 
 def main_multi_frame(results_tracking):
     player_crops = []
