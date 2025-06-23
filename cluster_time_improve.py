@@ -620,7 +620,9 @@ def main_multi_frame(results_tracking):
     for idx, (frame, _, player_boxes) in enumerate(results_tracking):
         new_boxes = []
         for box in player_boxes:
-            box_idx = boxes_refs.index((int(box[0]), int(box[1]), int(box[2]), int(box[3])))
+            x1, y1 = map(int, box.points[0])
+            x2, y2 = map(int, box.points[1])
+            box_idx = boxes_refs.index((x1, y1, x2, y2))
             class_id = cluster_labels[box_idx]
             new_boxes.append([*box, class_id])
         results_with_class_ids.append((frame, [], new_boxes))
