@@ -95,9 +95,14 @@ def process_video(yolo_path: str,
 
     # Compute frame indices for the given time window
     start_frame = int(start_second * orig_fps)
-    end_frame = int(end_second * orig_fps)
+    if end_second == -1:
+     end_frame = total_frames - 1
+    else:
+        end_frame = int(end_second * orig_fps)
+
     start_frame = max(0, min(start_frame, total_frames - 1))
     end_frame = max(start_frame, min(end_frame, total_frames - 1))
+
 
     # Determine skip interval to achieve target_fps
     skip_interval = 1 if target_fps == orig_fps else int(round(orig_fps / target_fps))
