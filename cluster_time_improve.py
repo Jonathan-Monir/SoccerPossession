@@ -655,27 +655,30 @@ def extract_features(image):
     return features
 
 
-def get_dominant_color(image):
-    if isinstance(image, np.ndarray):
-        image = Image.fromarray(image)
+def get_dominant_jersey_color(crop: np.ndarray, upper_ratio: float = 0.5) -> tuple:
+    """
+    Estimate dominant jersey color by clustering only the upper part of the player crop.
     
-    # Focus on the central region to avoid grass or arms
-    width, height = image.size
-    left = width // 4
-    top = height // 4
-    right = 3 * width // 4
-    bottom = 3 * height // 4
-    center_crop = image.crop((left, top, right, bottom))
+    Args:
+        crop (np.ndarray): Player crop image (H x W x 3)
+        upper_ratio (float): Proportion of crop height to use (top X%)
 
-    resized = center_crop.resize((50, 50))
-    np_img = np.array(resized).reshape(-1, 3)
+    Returns:
+        tuple: (R, G, B) dominant color
+    """
+    h, w, _ = crop.shape
+    upper_crop = crop[:int(h * upper_ratio), :, :]  # top X% of image
+    resized = cv2.resize(upper_crop, (50, 50), interpolation=cv2.INTER_AREA)
+    pixels = resized.reshape(-1, 3)
 
-    # Cluster to get dominant color
+    # Filter out green pixels (likely grass)
+    filtered_pixels = [p for p in pixels if not (p[1] > 100 and p[0] < 100 and p[2] < 100)]
+    if len(filtered_pixels) < 10:
+        filtered_pixels = pixels  # fallback if over-filtered
+
     kmeans = KMeans(n_clusters=1, n_init='auto')
-    kmeans.fit(np_img)
-    dominant_color = kmeans.cluster_centers_[0]
-    return tuple(dominant_color.astype(int))
-
+    kmeans.fit(filtered_pixels)
+    return tuple(map(int, kmeans.cluster_centers_[0]))
 
 def main_multi_frame(results_tracking):
     player_crops = []
@@ -738,8 +741,8 @@ def main_multi_frame(results_tracking):
     team1_crop = player_crops[team1_idx[0]]
     team2_crop = player_crops[team2_idx[0]]
 
-    team1_color = get_dominant_color(team1_crop)
-    team2_color = get_dominant_color(team2_crop)
+    team1_color = get_dominant_jersey_color(team1_crop)
+    team2_color = get_dominant_jersey_color(team2_crop)
 
     print(f"Team 1 dominant color: {team1_color}")
     print(f"Team 2 dominant color: {team2_color}")
