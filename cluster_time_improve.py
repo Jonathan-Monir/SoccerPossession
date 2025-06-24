@@ -655,30 +655,59 @@ def extract_features(image):
     return features
 
 
+import cv2
+import numpy as np
+from sklearn.cluster import KMeans
+
 def get_dominant_jersey_color(crop: np.ndarray, upper_ratio: float = 0.5) -> tuple:
     """
-    Estimate dominant jersey color by clustering only the upper part of the player crop.
-    
+    Estimate the dominant jersey color using HSV filtering to remove grass/skin/background.
+
     Args:
-        crop (np.ndarray): Player crop image (H x W x 3)
-        upper_ratio (float): Proportion of crop height to use (top X%)
+        crop (np.ndarray): BGR player crop (H, W, 3)
+        upper_ratio (float): Proportion of crop height to consider (focus on upper body)
 
     Returns:
-        tuple: (R, G, B) dominant color
+        tuple: (R, G, B) dominant jersey color
     """
+    # Crop top part of player
     h, w, _ = crop.shape
-    upper_crop = crop[:int(h * upper_ratio), :, :]  # top X% of image
-    resized = cv2.resize(upper_crop, (50, 50), interpolation=cv2.INTER_AREA)
-    pixels = resized.reshape(-1, 3)
+    crop = crop[:int(h * upper_ratio), :, :]  # top half (likely jersey)
 
-    # Filter out green pixels (likely grass)
-    filtered_pixels = [p for p in pixels if not (p[1] > 100 and p[0] < 100 and p[2] < 100)]
-    if len(filtered_pixels) < 10:
-        filtered_pixels = pixels  # fallback if over-filtered
+    # Convert to HSV
+    hsv_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
 
+    # Flatten
+    hsv_flat = hsv_crop.reshape(-1, 3)
+
+    # Filter out low saturation (gray/white/black), grass greens, and skin tones
+    mask = []
+    for h_val, s_val, v_val in hsv_flat:
+        # Ignore low saturation (not colorful)
+        if s_val < 50 or v_val < 50:
+            continue
+        # Ignore green grass (Hue 35–85)
+        if 35 <= h_val <= 85:
+            continue
+        # Ignore skin tones (Hue 0–25 and moderate sat)
+        if 0 <= h_val <= 25 and 30 < s_val < 150:
+            continue
+        mask.append((h_val, s_val, v_val))
+
+    # If too many were filtered, fall back to original HSV
+    if len(mask) < 10:
+        mask = hsv_flat
+
+    # Convert back to BGR for color clustering
+    hsv_masked = np.uint8(mask).reshape(-1, 1, 3)
+    bgr_pixels = cv2.cvtColor(hsv_masked, cv2.COLOR_HSV2BGR).reshape(-1, 3)
+
+    # KMeans clustering
     kmeans = KMeans(n_clusters=1, n_init='auto')
-    kmeans.fit(filtered_pixels)
-    return tuple(map(int, kmeans.cluster_centers_[0]))
+    kmeans.fit(bgr_pixels)
+    dom_color = kmeans.cluster_centers_[0]
+
+    return tuple(map(int, dom_color))
 
 def main_multi_frame(results_tracking):
     player_crops = []
