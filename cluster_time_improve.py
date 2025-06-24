@@ -552,110 +552,91 @@
 #     print("Team 1 Color (BGR):", team1_color)
 #     print("Team 2 Color (BGR):", team2_color)
 #////////////////////////// nemo
-import cv2
 import numpy as np
-from sklearn.mixture import GaussianMixture
-from collections import deque
+from sklearn.cluster import KMeans
+import cv2
+from collections import Counter
 
-# --- Configuration ---
-_history_len = 20
-_sat_thresh = 10
-_team_history = [deque(maxlen=_history_len), deque(maxlen=_history_len)]
-_initialized = False
+def extract_dominant_color_from_masked_crop(crop, mask):
+    """Extract dominant BGR color inside the mask."""
+    masked = crop.copy()
+    masked[mask == 0] = 0  # Apply mask
 
-# --- Helper Functions ---
-def _remove_field(lab_crop):
-    hsv = cv2.cvtColor(cv2.cvtColor(lab_crop, cv2.COLOR_LAB2BGR), cv2.COLOR_BGR2HSV)
-    h, s, v = cv2.split(hsv)
-    grass_mask = (h >= 35) & (h <= 85) & (s >= 50)
-    line_mask = (v >= 200) & (s <= 30)
-    return ~(grass_mask | line_mask)
+    pixels = masked.reshape(-1, 3)
+    pixels = pixels[np.any(pixels != [0, 0, 0], axis=1)]
+
+    if len(pixels) == 0:
+        return None
+
+    kmeans = KMeans(n_clusters=1, random_state=0, n_init='auto').fit(pixels)
+    return tuple(map(int, kmeans.cluster_centers_[0]))
+
+def prepare_features_for_clustering(results_tracking):
+    """Extract dominant jersey color per player using the torso mask."""
+    features = []
+    all_colors = []
+
+    for frame_idx, (frame, _, players) in enumerate(results_tracking):
+        for player in players:
+            x1, y1, x2, y2 = player["bbox"]
+            mask = player["mask"]
+
+            crop = frame[y1:y2, x1:x2]
+            if crop.size == 0 or mask is None or mask.sum() == 0:
+                continue
+
+            dom_color = extract_dominant_color_from_masked_crop(crop, mask)
+            if dom_color is not None:
+                all_colors.append(dom_color)
+                features.append({
+                    "frame_idx": frame_idx,
+                    "bbox": (x1, y1, x2, y2),
+                    "color": dom_color
+                })
+
+    return features, np.array(all_colors)
 
 
-def _cluster_colors(lab_pixels):
-    sat = np.sqrt(lab_pixels[:,1]**2 + lab_pixels[:,2]**2)
-    valid = sat >= _sat_thresh
-    if valid.sum() < 10:
-        valid[:] = True
-    data = lab_pixels[valid]
-    gmm = GaussianMixture(n_components=2, covariance_type='tied', random_state=0)
-    gmm.fit(data)
-    centers = gmm.means_
-    centers = centers[np.argsort(-centers[:,0])]
-    return centers
+def cluster_players_by_color(results_tracking, n_clusters=2):
+    """Main function to return color-clustered results."""
+    features, color_data = prepare_features_for_clustering(results_tracking)
 
+    if len(color_data) < n_clusters:
+        raise ValueError("Not enough players to cluster")
 
-def _lab_to_rgb_tuple(lab_color):
-    # Convert a single Lab color to an RGB tuple
-    bgr = cv2.cvtColor(np.uint8([[lab_color]]), cv2.COLOR_LAB2BGR)[0,0]
-    rgb = tuple(int(c) for c in bgr[::-1])
-    return rgb
+    kmeans = KMeans(n_clusters=n_clusters, random_state=0, n_init='auto').fit(color_data)
 
-# --- Core Extraction Function ---
-def extract_jersey_colors(frame, detections):
-    """
-    Args:
-        frame: BGR image (numpy array)
-        detections: list of Norfair Detection with .points ([[x1,y1],[x2,y2]])
-    Returns:
-        (results, team1_rgb, team2_rgb)
-    """
-    global _initialized
-    lab_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
-    results = []
-    for det in detections:
-        (x1, y1), (x2, y2) = det.points.astype(int)
-        crop = lab_frame[y1:y2, x1:x2]
-        if crop.size == 0:
-            continue
-        mask = _remove_field(crop)
-        pixels = crop[mask]
-        if pixels.size < 50:
-            continue
-        centers = _cluster_colors(pixels)
-        # Team assignment logic
-        if not _initialized and len(_team_history[0]) < _history_len:
-            _team_history[0].append(centers[0])
-            _team_history[1].append(centers[1])
-            team_id = 0 if len(_team_history[0]) > len(_team_history[1]) else 1
+    clustered_results = []
+    cluster_colors = {i: [] for i in range(n_clusters)}
+
+    frame_buffer = {}
+    for feature, label in zip(features, kmeans.labels_):
+        frame_idx = feature["frame_idx"]
+        bbox = feature["bbox"]
+
+        cluster_colors[label].append(feature["color"])
+
+        if frame_idx not in frame_buffer:
+            frame_buffer[frame_idx] = {"players": []}
+
+        frame_buffer[frame_idx]["players"].append({
+            "bbox": bbox,
+            "class_id": label
+        })
+
+    for i, (frame, ball_detections, _) in enumerate(results_tracking):
+        if i in frame_buffer:
+            player_detections = frame_buffer[i]["players"]
         else:
-            if not _initialized:
-                _initialized = True
-            avg0 = np.mean(_team_history[0], axis=0)
-            avg1 = np.mean(_team_history[1], axis=0)
-            d0 = np.linalg.norm(centers - avg0, axis=1).min()
-            d1 = np.linalg.norm(centers - avg1, axis=1).min()
-            team_id = 0 if d0 < d1 else 1
-            _team_history[team_id].append(centers[team_id])
-        # Attach team_id
-        try:
-            det.class_id = team_id
-        except AttributeError:
-            det.score = team_id
-        results.append(det)
-    # Compute median colors as RGB tuples
-    hist0 = np.array(_team_history[0])
-    hist1 = np.array(_team_history[1])
-    team1_rgb = _lab_to_rgb_tuple(np.median(hist0, axis=0)) if len(hist0) else None
-    team2_rgb = _lab_to_rgb_tuple(np.median(hist1, axis=0)) if len(hist1) else None
-    return results, team1_rgb, team2_rgb
+            player_detections = []
+        clustered_results.append((frame, ball_detections, player_detections))
 
-# --- Batch Processing Function ---
-def main_multi_frame(results_tracking):
-    """
-    Processes a list of tracking results and extracts jersey colors.
+    # Compute average color per cluster
+    team_colors = []
+    for i in range(n_clusters):
+        colors = np.array(cluster_colors[i])
+        avg = colors.mean(axis=0)
+        team_colors.append(tuple(map(int, avg)))
 
-    Args:
-        results_tracking: list of tuples (frame, ball_detections, player_detections)
-    Returns:
-        results_with_class_ids: list of (frame, ball_dets, player_dets_with_team_ids)
-        team1_color: RGB tuple of team 0
-        team2_color: RGB tuple of team 1
-    """
-    aggregated = []
-    team1_color, team2_color = None, None
-    for frame, balls, players in results_tracking:
-        processed, t1, t2 = extract_jersey_colors(frame, players)
-        aggregated.append((frame, balls, processed))
-        team1_color, team2_color = t1, t2
-    return aggregated, team1_color, team2_color
+    return clustered_results, team_colors[0], team_colors[1]
+
