@@ -553,6 +553,36 @@
 #     print("Team 2 Color (BGR):", team2_color)
 #////////////////////////// nemo
 
+from torchvision import models, transforms
+import torch
+import numpy as np
+from sklearn.cluster import KMeans
+from PIL import Image
+import cv2
+
+# Setup model for feature extraction
+model = models.resnet18(pretrained=True)
+model = torch.nn.Sequential(*list(model.children())[:-1])  # remove classification head
+model.eval()
+
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize([0.485, 0.456, 0.406],
+                         [0.229, 0.224, 0.225])
+])
+
+def extract_features(image):
+    if isinstance(image, np.ndarray):
+        # Convert BGR (OpenCV) to RGB
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = Image.fromarray(image)
+
+    with torch.no_grad():
+        image = transform(image).unsqueeze(0)
+        features = model(image).squeeze().numpy()
+    return features
+
 import cv2
 import numpy as np
 from sklearn.cluster import KMeans
