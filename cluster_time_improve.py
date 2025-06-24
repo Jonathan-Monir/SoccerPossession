@@ -558,7 +558,6 @@ from sklearn.cluster import KMeans
 import torch
 from torchvision import models, transforms
 from PIL import Image
-from typing import List, Tuple, Any
 import mediapipe as mp
 
 # Initialize MediaPipe Pose
@@ -657,7 +656,7 @@ def get_dominant_color(image, k=1):
     if not keypoints:
         filtered = filter_jersey_pixels(image)
         if len(filtered) == 0:
-            return [0, 0, 0]
+            return (0, 0, 0)
         kmeans = KMeans(n_clusters=k, n_init='auto').fit(filtered)
         return tuple(kmeans.cluster_centers_[0].astype(int))
 
@@ -666,10 +665,37 @@ def get_dominant_color(image, k=1):
     filtered = filter_jersey_pixels(masked)
 
     if len(filtered) == 0:
-        return [0, 0, 0]
+        return (0, 0, 0)
 
     kmeans = KMeans(n_clusters=k, n_init='auto').fit(filtered)
     return tuple(kmeans.cluster_centers_[0].astype(int))
+
+
+def extract_all_jersey_pixels(crops):
+    all_pixels = []
+    for crop in crops:
+        if crop.size == 0:
+            continue
+        keypoints = get_keypoints(crop)
+        if not keypoints:
+            filtered = filter_jersey_pixels(crop)
+        else:
+            torso_mask = create_torso_mask(crop.shape, keypoints)
+            masked = cv2.bitwise_and(crop, crop, mask=torso_mask)
+            filtered = filter_jersey_pixels(masked)
+        
+        if len(filtered) > 0:
+            all_pixels.extend(filtered)
+    
+    return np.array(all_pixels, dtype=np.uint8)
+
+
+def get_dominant_color_from_pixels(pixels):
+    if len(pixels) == 0:
+        return (0, 0, 0)
+    kmeans = KMeans(n_clusters=1, n_init='auto').fit(pixels)
+    return tuple(kmeans.cluster_centers_[0].astype(int))
+
 
 def main_multi_frame(results_tracking):
     player_crops = []
@@ -733,8 +759,11 @@ def main_multi_frame(results_tracking):
     team1_crops = [player_crops[i] for i in team1_indices]
     team2_crops = [player_crops[i] for i in team2_indices]
 
-    team1_color = get_dominant_color(cv2.vconcat(team1_crops)) if team1_crops else (0, 0, 0)
-    team2_color = get_dominant_color(cv2.vconcat(team2_crops)) if team2_crops else (0, 0, 0)
+    team1_pixels = extract_all_jersey_pixels(team1_crops)
+    team2_pixels = extract_all_jersey_pixels(team2_crops)
+
+    team1_color = get_dominant_color_from_pixels(team1_pixels)
+    team2_color = get_dominant_color_from_pixels(team2_pixels)
 
     print(f"Team 1 dominant color: {team1_color}")
     print(f"Team 2 dominant color: {team2_color}")
