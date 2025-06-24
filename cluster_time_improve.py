@@ -557,7 +557,7 @@ import numpy as np
 from sklearn.mixture import GaussianMixture
 from collections import deque
 
-# Global history for temporal smoothing
+# --- Configuration ---
 _history_len = 20
 _sat_thresh = 10
 _team_history = [deque(maxlen=_history_len), deque(maxlen=_history_len)]
@@ -567,9 +567,7 @@ _initialized = False
 def _remove_field(lab_crop):
     hsv = cv2.cvtColor(cv2.cvtColor(lab_crop, cv2.COLOR_LAB2BGR), cv2.COLOR_BGR2HSV)
     h, s, v = cv2.split(hsv)
-    # Grass mask
     grass_mask = (h >= 35) & (h <= 85) & (s >= 50)
-    # Line mask
     line_mask = (v >= 200) & (s <= 30)
     return ~(grass_mask | line_mask)
 
@@ -591,21 +589,18 @@ def _lab_to_hex(lab_color):
     bgr = cv2.cvtColor(np.uint8([[lab_color]]), cv2.COLOR_LAB2BGR)[0,0]
     return '#%02x%02x%02x' % tuple(int(c) for c in bgr[::-1])
 
-# --- Main Function ---
-def main_multi_frame(frame, detections):
+# --- Core Extraction Function ---
+def extract_jersey_colors(frame, detections):
     """
     Args:
         frame: BGR image (numpy array)
-        detections: list of Norfair Detection objects with .points as np.array [[x1,y1],[x2,y2]]
+        detections: list of Norfair Detection with .points ([[x1,y1],[x2,y2]])
     Returns:
-        results_with_class_ids: same list, but each Detection now has a .score or attribute set to assigned team_id
-        team1_color: HEX string of team 0's current color
-        team2_color: HEX string of team 1's current color
+        (results, team1_hex, team2_hex)
     """
     global _initialized
     lab_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
     results = []
-
     for det in detections:
         (x1, y1), (x2, y2) = det.points.astype(int)
         crop = lab_frame[y1:y2, x1:x2]
@@ -616,8 +611,7 @@ def main_multi_frame(frame, detections):
         if pixels.size < 50:
             continue
         centers = _cluster_colors(pixels)
-
-        # Determine team assignment
+        # Team assignment logic
         if not _initialized and len(_team_history[0]) < _history_len:
             _team_history[0].append(centers[0])
             _team_history[1].append(centers[1])
@@ -631,18 +625,36 @@ def main_multi_frame(frame, detections):
             d1 = np.linalg.norm(centers - avg1, axis=1).min()
             team_id = 0 if d0 < d1 else 1
             _team_history[team_id].append(centers[team_id])
-
-        # Assign team_id into Detection (assumes a .score or .class_id attribute)
+        # Attach team_id
         try:
             det.class_id = team_id
         except AttributeError:
             det.score = team_id
         results.append(det)
-
-    # Compute current team colors as median of histories
+    # Compute median colors
     hist0 = np.array(_team_history[0])
     hist1 = np.array(_team_history[1])
-    team1_color = _lab_to_hex(np.median(hist0, axis=0)) if len(hist0) else None
-    team2_color = _lab_to_hex(np.median(hist1, axis=0)) if len(hist1) else None
+    team1_hex = _lab_to_hex(np.median(hist0, axis=0)) if len(hist0) else None
+    team2_hex = _lab_to_hex(np.median(hist1, axis=0)) if len(hist1) else None
+    return results, team1_hex, team2_hex
 
-    return results, team1_color, team2_color
+# --- Batch Processing Function ---
+def main_multi_frame(results_tracking):
+    """
+    Processes a list of tracking results and extracts jersey colors.
+
+    Args:
+        results_tracking: list of tuples (frame, ball_detections, player_detections)
+    Returns:
+        results_with_class_ids: list of (frame, ball_dets, player_dets_with_team_ids)
+        team1_color: HEX of team 0
+        team2_color: HEX of team 1
+    """
+    aggregated = []
+    team1_color, team2_color = None, None
+    for frame, balls, players in results_tracking:
+        processed, t1, t2 = extract_jersey_colors(frame, players)
+        aggregated.append((frame, balls, processed))
+        # update final colors
+        team1_color, team2_color = t1, t2
+    return aggregated, team1_color, team2_color
