@@ -585,9 +585,11 @@ def _cluster_colors(lab_pixels):
     return centers
 
 
-def _lab_to_hex(lab_color):
+def _lab_to_rgb_tuple(lab_color):
+    # Convert a single Lab color to an RGB tuple
     bgr = cv2.cvtColor(np.uint8([[lab_color]]), cv2.COLOR_LAB2BGR)[0,0]
-    return '#%02x%02x%02x' % tuple(int(c) for c in bgr[::-1])
+    rgb = tuple(int(c) for c in bgr[::-1])
+    return rgb
 
 # --- Core Extraction Function ---
 def extract_jersey_colors(frame, detections):
@@ -596,7 +598,7 @@ def extract_jersey_colors(frame, detections):
         frame: BGR image (numpy array)
         detections: list of Norfair Detection with .points ([[x1,y1],[x2,y2]])
     Returns:
-        (results, team1_hex, team2_hex)
+        (results, team1_rgb, team2_rgb)
     """
     global _initialized
     lab_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
@@ -631,12 +633,12 @@ def extract_jersey_colors(frame, detections):
         except AttributeError:
             det.score = team_id
         results.append(det)
-    # Compute median colors
+    # Compute median colors as RGB tuples
     hist0 = np.array(_team_history[0])
     hist1 = np.array(_team_history[1])
-    team1_hex = _lab_to_hex(np.median(hist0, axis=0)) if len(hist0) else None
-    team2_hex = _lab_to_hex(np.median(hist1, axis=0)) if len(hist1) else None
-    return results, team1_hex, team2_hex
+    team1_rgb = _lab_to_rgb_tuple(np.median(hist0, axis=0)) if len(hist0) else None
+    team2_rgb = _lab_to_rgb_tuple(np.median(hist1, axis=0)) if len(hist1) else None
+    return results, team1_rgb, team2_rgb
 
 # --- Batch Processing Function ---
 def main_multi_frame(results_tracking):
@@ -647,14 +649,13 @@ def main_multi_frame(results_tracking):
         results_tracking: list of tuples (frame, ball_detections, player_detections)
     Returns:
         results_with_class_ids: list of (frame, ball_dets, player_dets_with_team_ids)
-        team1_color: HEX of team 0
-        team2_color: HEX of team 1
+        team1_color: RGB tuple of team 0
+        team2_color: RGB tuple of team 1
     """
     aggregated = []
     team1_color, team2_color = None, None
     for frame, balls, players in results_tracking:
         processed, t1, t2 = extract_jersey_colors(frame, players)
         aggregated.append((frame, balls, processed))
-        # update final colors
         team1_color, team2_color = t1, t2
     return aggregated, team1_color, team2_color
