@@ -554,223 +554,95 @@
 #////////////////////////// nemo
 import cv2
 import numpy as np
-from sklearn.cluster import KMeans
-from sklearn.metrics.pairwise import cosine_similarity
-import torch
-from torchvision import models, transforms
-from PIL import Image
-import mediapipe as mp
+from sklearn.mixture import GaussianMixture
+from collections import deque
+
+# Global history for temporal smoothing
+_history_len = 20
+_sat_thresh = 10
+_team_history = [deque(maxlen=_history_len), deque(maxlen=_history_len)]
+_initialized = False
+
+# --- Helper Functions ---
+def _remove_field(lab_crop):
+    hsv = cv2.cvtColor(cv2.cvtColor(lab_crop, cv2.COLOR_LAB2BGR), cv2.COLOR_BGR2HSV)
+    h, s, v = cv2.split(hsv)
+    # Grass mask
+    grass_mask = (h >= 35) & (h <= 85) & (s >= 50)
+    # Line mask
+    line_mask = (v >= 200) & (s <= 30)
+    return ~(grass_mask | line_mask)
 
 
-# Initialize MediaPipe Pose
-mp_pose = mp.solutions.pose
-pose = mp_pose.Pose(static_image_mode=True, model_complexity=1, enable_segmentation=False)
-
-# Setup ResNet feature extractor
-model = models.resnet18(pretrained=True)
-model = torch.nn.Sequential(*list(model.children())[:-1])  # Remove classification head
-model.eval()
-
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-])
-
-def extract_features(image):
-    if isinstance(image, np.ndarray):
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = Image.fromarray(image)
-
-    with torch.no_grad():
-        image = transform(image).unsqueeze(0)
-        features = model(image).squeeze().numpy()
-    return features
+def _cluster_colors(lab_pixels):
+    sat = np.sqrt(lab_pixels[:,1]**2 + lab_pixels[:,2]**2)
+    valid = sat >= _sat_thresh
+    if valid.sum() < 10:
+        valid[:] = True
+    data = lab_pixels[valid]
+    gmm = GaussianMixture(n_components=2, covariance_type='tied', random_state=0)
+    gmm.fit(data)
+    centers = gmm.means_
+    centers = centers[np.argsort(-centers[:,0])]
+    return centers
 
 
-def extract_color_histogram(image, bins=(8, 8, 8)):
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    hist = cv2.calcHist([hsv], [0, 1, 2], None, bins, [0, 180, 0, 256, 0, 256])
-    cv2.normalize(hist, hist)
-    return hist.flatten()
+def _lab_to_hex(lab_color):
+    bgr = cv2.cvtColor(np.uint8([[lab_color]]), cv2.COLOR_LAB2BGR)[0,0]
+    return '#%02x%02x%02x' % tuple(int(c) for c in bgr[::-1])
 
+# --- Main Function ---
+def extract_jersey_colors(frame, detections):
+    """
+    Args:
+        frame: BGR image (numpy array)
+        detections: list of Norfair Detection objects with .points as np.array [[x1,y1],[x2,y2]]
+    Returns:
+        results_with_class_ids: same list, but each Detection now has a .score or attribute set to assigned team_id
+        team1_color: HEX string of team 0's current color
+        team2_color: HEX string of team 1's current color
+    """
+    global _initialized
+    lab_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+    results = []
 
-def get_keypoints(image):
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    results = pose.process(image_rgb)
-    if not results.pose_landmarks:
-        return None
-    landmarks = results.pose_landmarks.landmark
-    h, w, _ = image.shape
-
-    def get_coords(landmark_id):
-        lm = landmarks[landmark_id]
-        return int(lm.x * w), int(lm.y * h)
-
-    try:
-        left_shoulder = get_coords(mp_pose.PoseLandmark.LEFT_SHOULDER.value)
-        right_shoulder = get_coords(mp_pose.PoseLandmark.RIGHT_SHOULDER.value)
-        left_hip = get_coords(mp_pose.PoseLandmark.LEFT_HIP.value)
-        right_hip = get_coords(mp_pose.PoseLandmark.RIGHT_HIP.value)
-        return {
-            'left_shoulder': left_shoulder,
-            'right_shoulder': right_shoulder,
-            'left_hip': left_hip,
-            'right_hip': right_hip
-        }
-    except Exception as e:
-        print("Error extracting landmarks:", e)
-        return None
-
-
-def create_torso_mask(image_shape, keypoints):
-    mask = np.zeros(image_shape[:2], dtype=np.uint8)
-    pts = [
-        keypoints['left_shoulder'],
-        keypoints['right_shoulder'],
-        keypoints['right_hip'],
-        keypoints['left_hip']
-    ]
-    cv2.fillPoly(mask, [np.array(pts, np.int32)], 255)
-    return mask
-
-
-def filter_jersey_pixels(img: np.ndarray) -> np.ndarray:
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    mask = []
-
-    for pixel in hsv.reshape(-1, 3):
-        h, s, v = pixel
-
-        # Remove grass (green)
-        if 35 <= h <= 85 and s > 60 and v > 60:
+    for det in detections:
+        (x1, y1), (x2, y2) = det.points.astype(int)
+        crop = lab_frame[y1:y2, x1:x2]
+        if crop.size == 0:
             continue
-        # Remove skin-like tones
-        if 0 <= h <= 25 and 30 < s < 180 and v > 50:
+        mask = _remove_field(crop)
+        pixels = crop[mask]
+        if pixels.size < 50:
             continue
-        # Remove dull/gray pixels
-        if s < 50 or v < 50:
-            continue
+        centers = _cluster_colors(pixels)
 
-        mask.append(pixel)
+        # Determine team assignment
+        if not _initialized and len(_team_history[0]) < _history_len:
+            _team_history[0].append(centers[0])
+            _team_history[1].append(centers[1])
+            team_id = 0 if len(_team_history[0]) > len(_team_history[1]) else 1
+        else:
+            if not _initialized:
+                _initialized = True
+            avg0 = np.mean(_team_history[0], axis=0)
+            avg1 = np.mean(_team_history[1], axis=0)
+            d0 = np.linalg.norm(centers - avg0, axis=1).min()
+            d1 = np.linalg.norm(centers - avg1, axis=1).min()
+            team_id = 0 if d0 < d1 else 1
+            _team_history[team_id].append(centers[team_id])
 
-    if len(mask) == 0:
-        return img.reshape(-1, 3)  # fallback if all are masked
+        # Assign team_id into Detection (assumes a .score or .class_id attribute)
+        try:
+            det.class_id = team_id
+        except AttributeError:
+            det.score = team_id
+        results.append(det)
 
-    bgr = cv2.cvtColor(np.uint8(mask).reshape(-1, 1, 3), cv2.COLOR_HSV2BGR)
-    return bgr.reshape(-1, 3)
+    # Compute current team colors as median of histories
+    hist0 = np.array(_team_history[0])
+    hist1 = np.array(_team_history[1])
+    team1_color = _lab_to_hex(np.median(hist0, axis=0)) if len(hist0) else None
+    team2_color = _lab_to_hex(np.median(hist1, axis=0)) if len(hist1) else None
 
-
-def get_jersey_pixels(image):
-    """Returns filtered jersey pixels from image"""
-    keypoints = get_keypoints(image)
-    if not keypoints:
-        # Fallback: use upper half of bounding box
-        h = image.shape[0]
-        upper_body = image[0:int(h*0.6), :]
-        return filter_jersey_pixels(upper_body)
-
-    torso_mask = create_torso_mask(image.shape, keypoints)
-    masked = cv2.bitwise_and(image, image, mask=torso_mask)
-    return filter_jersey_pixels(masked)
-
-
-def get_dominant_color(pixels, k=1):
-    if len(pixels) == 0:
-        return (0, 0, 0)
-    kmeans = KMeans(n_clusters=k, n_init='auto').fit(pixels)
-    return tuple(kmeans.cluster_centers_[0].astype(int))
-
-
-def classify_color_by_hue(color_bgr):
-    hsv = cv2.cvtColor(np.uint8([[color_bgr]]), cv2.COLOR_BGR2HSV)[0][0]
-    h = hsv[0]
-
-    if (h >= 0 and h <= 10) or (h >= 170 and h <= 180):
-        return "red"
-    elif h >= 100 and h <= 130:
-        return "blue"
-    else:
-        return "unknown"
-
-
-def main_multi_frame(results_tracking):
-    player_crops = []
-    boxes_refs = []
-
-    print("=== Step 1: Feature Extraction ===")
-
-    # Step 1: Collect valid crops
-    for frame_idx, (frame, _, player_boxes) in enumerate(results_tracking):
-        for box in player_boxes:
-            x1, y1 = map(int, box.points[0])
-            x2, y2 = map(int, box.points[1])
-            if x2 > x1 and y2 > y1:
-                crop = frame[y1:y2, x1:x2]
-                if crop.size == 0 or crop.shape[0] < 20 or crop.shape[1] < 20:
-                    continue
-                player_crops.append(crop)
-                boxes_refs.append((x1, y1, x2, y2))
-
-    assert len(player_crops) > 0, "No valid player crops found."
-    print(f"Collected {len(player_crops)} valid player crops.")
-
-    # Step 2: Feature extraction with color histogram
-    features = []
-    for idx, img in enumerate(player_crops):
-        resnet_feat = extract_features(img).flatten()
-        color_hist = extract_color_histogram(img)
-        combined = np.hstack((resnet_feat, color_hist))
-        features.append(combined)
-
-    features = np.array(features)
-    print("Feature shape:", features.shape)
-
-    # Step 3: Clustering
-    kmeans = KMeans(n_clusters=2, random_state=42, n_init='auto')
-    cluster_labels = kmeans.fit_predict(features)
-    print("Cluster label distribution:", np.bincount(cluster_labels))
-
-    # Step 4: Assign class IDs
-    results_with_class_ids = []
-    for frame_idx, (frame, _, player_boxes) in enumerate(results_tracking):
-        new_boxes = []
-        for box in player_boxes:
-            x1, y1 = map(int, box.points[0])
-            x2, y2 = map(int, box.points[1])
-            if (x1, y1, x2, y2) in boxes_refs:
-                box_idx = boxes_refs.index((x1, y1, x2, y2))
-                class_id = cluster_labels[box_idx]
-                new_boxes.append([x1, y1, x2, y2, class_id])
-        results_with_class_ids.append((frame, [], new_boxes))
-
-    # Step 5: Get dominant jersey pixels per team
-    team1_indices = [i for i, c in enumerate(cluster_labels) if c == 0]
-    team2_indices = [i for i, c in enumerate(cluster_labels) if c == 1]
-
-    team1_pixels = []
-    team2_pixels = []
-
-    for i, crop in enumerate(player_crops):
-        pixels = get_jersey_pixels(crop)
-        if i in team1_indices:
-            team1_pixels.extend(pixels)
-        elif i in team2_indices:
-            team2_pixels.extend(pixels)
-
-    team1_pixels = np.array(team1_pixels, dtype=np.uint8)
-    team2_pixels = np.array(team2_pixels, dtype=np.uint8)
-
-    team1_color = get_dominant_color(team1_pixels)
-    team2_color = get_dominant_color(team2_pixels)
-
-    print(f"Team 1 dominant color (BGR): {team1_color}")
-    print(f"Team 2 dominant color (BGR): {team2_color}")
-
-    print(f"Team 1 HSV: {cv2.cvtColor(np.uint8([[team1_color]]), cv2.COLOR_BGR2HSV)[0][0]}")
-    print(f"Team 2 HSV: {cv2.cvtColor(np.uint8([[team2_color]]), cv2.COLOR_BGR2HSV)[0][0]}")
-
-    print(f"Team 1 classified as: {classify_color_by_hue(team1_color)}")
-    print(f"Team 2 classified as: {classify_color_by_hue(team2_color)}")
-
-    return results_with_class_ids, team1_color, team2_color
+    return results, team1_color, team2_color
