@@ -592,7 +592,7 @@ def _lab_to_hex(lab_color):
     return '#%02x%02x%02x' % tuple(int(c) for c in bgr[::-1])
 
 # --- Main Function ---
-def extract_jersey_colors(frame, detections):
+def main_multi_frame(frame, detections):
     """
     Args:
         frame: BGR image (numpy array)
