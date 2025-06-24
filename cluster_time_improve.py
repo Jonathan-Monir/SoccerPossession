@@ -688,19 +688,39 @@ import cv2
 import numpy as np
 from sklearn.cluster import KMeans
 
-def get_dominant_jersey_color(crops: list[np.ndarray], top_k=10) -> tuple:
-    if len(crops) > top_k:
-        crops = crops[:top_k]
+import cv2
+import numpy as np
 
-    all_pixels = []
-    for crop in crops:
-        pixels = filter_jersey_pixels(crop)
-        all_pixels.append(pixels)
+def get_dominant_jersey_color(image: np.ndarray) -> tuple:
+    if image is None or image.size == 0:
+        return (0, 0, 0)  # fallback
 
-    all_pixels = np.vstack(all_pixels)
-    kmeans = KMeans(n_clusters=1, n_init='auto')
-    kmeans.fit(all_pixels)
-    return tuple(map(int, kmeans.cluster_centers_[0]))
+    # Resize to reduce noise
+    image = cv2.resize(image, (50, 100))  # taller for vertical jersey
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    # Mask out green grass
+    mask_grass = cv2.inRange(hsv, (35, 40, 40), (85, 255, 255))
+
+    # Mask out skin tones (common in soccer)
+    mask_skin = cv2.inRange(hsv, (0, 30, 60), (25, 180, 255))
+
+    # Combine masks to exclude both
+    mask = cv2.bitwise_or(mask_grass, mask_skin)
+    mask_inv = cv2.bitwise_not(mask)
+
+    # Apply mask
+    valid_pixels = image[mask_inv > 0]
+
+    # Fallback if too few valid pixels
+    if valid_pixels.shape[0] < 50:
+        return tuple(np.mean(image.reshape(-1, 3), axis=0).astype(int))
+
+    # KMeans to get dominant jersey color
+    from sklearn.cluster import KMeans
+    kmeans = KMeans(n_clusters=1, random_state=0).fit(valid_pixels)
+    dominant_color = kmeans.cluster_centers_[0]
+    return tuple(map(int, dominant_color))
 
 
 def main_multi_frame(results_tracking):
@@ -709,6 +729,8 @@ def main_multi_frame(results_tracking):
     boxes_refs = []
 
     print("=== Step 2: Clustering ===")
+    
+    # Step 1: Collect player crops
     for frame_idx, (frame, _, player_boxes) in enumerate(results_tracking):
         for box in player_boxes:
             x1, y1 = map(int, box.points[0])
@@ -719,14 +741,13 @@ def main_multi_frame(results_tracking):
                 if torso_crop.size == 0: continue  # avoid blank crops
                 player_crops.append(torso_crop)
                 if torso_crop.shape[0] > 10 and torso_crop.shape[1] > 10:
-                    player_crops.append(torso_crop)
                     frame_refs.append(frame_idx)
                     boxes_refs.append((x1, y1, x2, y2))
 
     assert len(player_crops) > 0, "No valid player crops found."
     print(f"Collected {len(player_crops)} valid player crops.")
 
-    # Extract features
+    # Step 2: Extract features
     features = []
     for idx, img in enumerate(player_crops):
         try:
@@ -738,7 +759,7 @@ def main_multi_frame(results_tracking):
     features = np.array(features)
     print("Feature shape:", features.shape)
 
-    # Clustering
+    # Step 3: Clustering with KMeans
     kmeans = KMeans(n_clusters=2, random_state=42, n_init='auto')
     cluster_labels = kmeans.fit_predict(features)
     print("Cluster label distribution:", np.bincount(cluster_labels))
@@ -758,18 +779,19 @@ def main_multi_frame(results_tracking):
                 new_boxes.append([x1, y1, x2, y2, class_id])
         results_with_class_ids.append((frame, [], new_boxes))
 
-    # Extract one crop from each cluster to estimate team color
+    # Step 4: Extract one crop from each cluster to estimate team color
     team1_indices = [i for i, c in enumerate(cluster_labels) if c == 0]
     team2_indices = [i for i, c in enumerate(cluster_labels) if c == 1]
 
     team1_crops = [player_crops[i] for i in team1_indices]
     team2_crops = [player_crops[i] for i in team2_indices]
 
+    # Get dominant color using the improved method
     team1_color = get_dominant_jersey_color(team1_crops)
     team2_color = get_dominant_jersey_color(team2_crops)
-
 
     print(f"Team 1 dominant color: {team1_color}")
     print(f"Team 2 dominant color: {team2_color}")
 
     return results_with_class_ids, team1_color, team2_color
+
