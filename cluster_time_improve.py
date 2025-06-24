@@ -691,37 +691,33 @@ from sklearn.cluster import KMeans
 import cv2
 import numpy as np
 
-def get_dominant_jersey_color(image: np.ndarray) -> tuple:
-    if image is None or image.size == 0:
-        return (0, 0, 0)  # fallback
+def get_dominant_jersey_color_from_list(crops: list) -> tuple:
+    """
+    Computes the average dominant color from a list of torso crops,
+    excluding background-like hues (grass, skin tones).
+    """
+    all_pixels = []
 
-    # Resize to reduce noise
-    image = cv2.resize(image, (50, 100))  # taller for vertical jersey
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    for crop in crops:
+        if crop is None or crop.size == 0:
+            continue
 
-    # Mask out green grass
-    mask_grass = cv2.inRange(hsv, (35, 40, 40), (85, 255, 255))
+        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        # Mask out green (grass) and skin tones
+        grass_mask = cv2.inRange(hsv, (35, 40, 40), (85, 255, 255))  # green
+        skin_mask = cv2.inRange(hsv, (0, 40, 40), (20, 255, 255))    # skin
+        mask = cv2.bitwise_not(cv2.bitwise_or(grass_mask, skin_mask))
+        pixels = crop[mask > 0]
+        if len(pixels) > 0:
+            all_pixels.append(pixels)
 
-    # Mask out skin tones (common in soccer)
-    mask_skin = cv2.inRange(hsv, (0, 30, 60), (25, 180, 255))
+    if not all_pixels:
+        return (0, 0, 0)
 
-    # Combine masks to exclude both
-    mask = cv2.bitwise_or(mask_grass, mask_skin)
-    mask_inv = cv2.bitwise_not(mask)
-
-    # Apply mask
-    valid_pixels = image[mask_inv > 0]
-
-    # Fallback if too few valid pixels
-    if valid_pixels.shape[0] < 50:
-        return tuple(np.mean(image.reshape(-1, 3), axis=0).astype(int))
-
-    # KMeans to get dominant jersey color
-    from sklearn.cluster import KMeans
-    kmeans = KMeans(n_clusters=1, random_state=0).fit(valid_pixels)
-    dominant_color = kmeans.cluster_centers_[0]
-    return tuple(map(int, dominant_color))
-
+    all_pixels = np.concatenate(all_pixels, axis=0)
+    kmeans = KMeans(n_clusters=1, random_state=42).fit(all_pixels)
+    dominant_color = kmeans.cluster_centers_[0].astype(int)
+    return tuple(dominant_color)
 
 def main_multi_frame(results_tracking):
     player_crops = []
@@ -787,8 +783,9 @@ def main_multi_frame(results_tracking):
     team2_crops = [player_crops[i] for i in team2_indices]
 
     # Get dominant color using the improved method
-    team1_color = get_dominant_jersey_color(team1_crops)
-    team2_color = get_dominant_jersey_color(team2_crops)
+    team1_color = get_dominant_jersey_color_from_list(team1_crops)
+    team2_color = get_dominant_jersey_color_from_list(team2_crops)
+
 
     print(f"Team 1 dominant color: {team1_color}")
     print(f"Team 2 dominant color: {team2_color}")
