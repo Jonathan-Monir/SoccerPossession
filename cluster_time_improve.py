@@ -659,58 +659,48 @@ import numpy as np
 from sklearn.cluster import KMeans
 
 def filter_jersey_pixels(img: np.ndarray) -> np.ndarray:
-    """
-    Filter pixels likely to be jersey by removing background-like HSV ranges.
-    """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     mask = []
 
     for pixel in hsv.reshape(-1, 3):
         h, s, v = pixel
 
-        # Remove grass: green hues
-        if 35 <= h <= 85:
+        # Remove grass
+        if 35 <= h <= 85 and s > 60 and v > 60:
             continue
-        # Remove skin tones: red/orange + moderate saturation
-        if 0 <= h <= 25 and 30 < s < 160:
+        # Remove skin
+        if 0 <= h <= 25 and 30 < s < 180 and v > 50:
             continue
-        # Remove dull pixels
+        # Remove dull
         if s < 50 or v < 50:
             continue
 
         mask.append(pixel)
 
-    mask = np.array(mask, dtype=np.uint8)
     if len(mask) == 0:
-        return img.reshape(-1, 3)  # fallback to original
+        return img.reshape(-1, 3)  # fallback
 
-    # Convert back to BGR
-    mask_bgr = cv2.cvtColor(mask.reshape(-1, 1, 3), cv2.COLOR_HSV2BGR)
-    return mask_bgr.reshape(-1, 3)
+    bgr = cv2.cvtColor(np.uint8(mask).reshape(-1, 1, 3), cv2.COLOR_HSV2BGR)
+    return bgr.reshape(-1, 3)
+
 
 import cv2
 import numpy as np
 from sklearn.cluster import KMeans
 
-def get_dominant_jersey_color(crops: list[np.ndarray]) -> tuple:
-    """
-    Given list of BGR crops, return dominant jersey color (R, G, B).
-    """
-    all_pixels = []
+def get_dominant_jersey_color(crops: list[np.ndarray], top_k=10) -> tuple:
+    if len(crops) > top_k:
+        crops = crops[:top_k]
 
+    all_pixels = []
     for crop in crops:
-        h, w, _ = crop.shape
-        jersey_area = crop[:int(h * 0.4), :, :]  # Top 40%
-        filtered_pixels = filter_jersey_pixels(jersey_area)
-        all_pixels.append(filtered_pixels)
+        pixels = filter_jersey_pixels(crop)
+        all_pixels.append(pixels)
 
     all_pixels = np.vstack(all_pixels)
-
-    # Cluster
     kmeans = KMeans(n_clusters=1, n_init='auto')
     kmeans.fit(all_pixels)
-    dom_color = kmeans.cluster_centers_[0]
-    return tuple(map(int, dom_color))
+    return tuple(map(int, kmeans.cluster_centers_[0]))
 
 
 def main_multi_frame(results_tracking):
@@ -724,9 +714,12 @@ def main_multi_frame(results_tracking):
             x1, y1 = map(int, box.points[0])
             x2, y2 = map(int, box.points[1])
             if x2 > x1 and y2 > y1:
-                crop = frame[y1:y2, x1:x2]
-                if crop.shape[0] > 10 and crop.shape[1] > 10:
-                    player_crops.append(crop)
+                h = y2 - y1
+                torso_crop = frame[y1 + int(h * 0.15): y1 + int(h * 0.55), x1:x2]  # top-center section
+                if torso_crop.size == 0: continue  # avoid blank crops
+                player_crops.append(torso_crop)
+                if torso_crop.shape[0] > 10 and torso_crop.shape[1] > 10:
+                    player_crops.append(torso_crop)
                     frame_refs.append(frame_idx)
                     boxes_refs.append((x1, y1, x2, y2))
 
@@ -766,17 +759,15 @@ def main_multi_frame(results_tracking):
         results_with_class_ids.append((frame, [], new_boxes))
 
     # Extract one crop from each cluster to estimate team color
-    team1_idx = np.where(cluster_labels == 0)[0]
-    team2_idx = np.where(cluster_labels == 1)[0]
-    
-    assert len(team1_idx) > 0 and len(team2_idx) > 0, "One of the clusters is empty."
+    team1_indices = [i for i, c in enumerate(cluster_labels) if c == 0]
+    team2_indices = [i for i, c in enumerate(cluster_labels) if c == 1]
 
-    # Group crops by cluster
-    team1_crops = [player_crops[i] for i in range(len(player_crops)) if cluster_labels[i] == 0]
-    team2_crops = [player_crops[i] for i in range(len(player_crops)) if cluster_labels[i] == 1]
+    team1_crops = [player_crops[i] for i in team1_indices]
+    team2_crops = [player_crops[i] for i in team2_indices]
 
     team1_color = get_dominant_jersey_color(team1_crops)
     team2_color = get_dominant_jersey_color(team2_crops)
+
 
     print(f"Team 1 dominant color: {team1_color}")
     print(f"Team 2 dominant color: {team2_color}")
