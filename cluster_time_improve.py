@@ -552,29 +552,32 @@
 #     print("Team 1 Color (BGR):", team1_color)
 #     print("Team 2 Color (BGR):", team2_color)
 #////////////////////////// nemo
-
-from torchvision import models, transforms
-import torch
+import cv2
 import numpy as np
 from sklearn.cluster import KMeans
+import torch
+from torchvision import models, transforms
 from PIL import Image
-import cv2
+from typing import List, Tuple, Any
+import mediapipe as mp
 
-# Setup model for feature extraction
+# Initialize MediaPipe Pose
+mp_pose = mp.solutions.pose
+pose = mp_pose.Pose(static_image_mode=True, model_complexity=1, enable_segmentation=False)
+
+# Setup ResNet feature extractor
 model = models.resnet18(pretrained=True)
-model = torch.nn.Sequential(*list(model.children())[:-1])  # remove classification head
+model = torch.nn.Sequential(*list(model.children())[:-1])  # Remove classification head
 model.eval()
 
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406],
-                         [0.229, 0.224, 0.225])
+    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 ])
 
 def extract_features(image):
     if isinstance(image, np.ndarray):
-        # Convert BGR (OpenCV) to RGB
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = Image.fromarray(image)
 
@@ -583,11 +586,46 @@ def extract_features(image):
         features = model(image).squeeze().numpy()
     return features
 
-import cv2
-import numpy as np
-from sklearn.cluster import KMeans
+# --- NEW: Pose-based torso mask and jersey extraction ---
 
-# Filter non-jersey pixels based on HSV thresholds
+def get_keypoints(image):
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    results = pose.process(image_rgb)
+    if not results.pose_landmarks:
+        return None
+    landmarks = results.pose_landmarks.landmark
+    h, w, _ = image.shape
+
+    def get_coords(landmark_id):
+        lm = landmarks[landmark_id]
+        return int(lm.x * w), int(lm.y * h)
+
+    try:
+        left_shoulder = get_coords(mp_pose.PoseLandmark.LEFT_SHOULDER.value)
+        right_shoulder = get_coords(mp_pose.PoseLandmark.RIGHT_SHOULDER.value)
+        left_hip = get_coords(mp_pose.PoseLandmark.LEFT_HIP.value)
+        right_hip = get_coords(mp_pose.PoseLandmark.RIGHT_HIP.value)
+        return {
+            'left_shoulder': left_shoulder,
+            'right_shoulder': right_shoulder,
+            'left_hip': left_hip,
+            'right_hip': right_hip
+        }
+    except Exception as e:
+        print("Error extracting landmarks:", e)
+        return None
+
+def create_torso_mask(image_shape, keypoints):
+    mask = np.zeros(image_shape[:2], dtype=np.uint8)
+    pts = [
+        keypoints['left_shoulder'],
+        keypoints['right_shoulder'],
+        keypoints['right_hip'],
+        keypoints['left_hip']
+    ]
+    cv2.fillPoly(mask, [np.array(pts, np.int32)], 255)
+    return mask
+
 def filter_jersey_pixels(img: np.ndarray) -> np.ndarray:
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     mask = []
@@ -613,27 +651,26 @@ def filter_jersey_pixels(img: np.ndarray) -> np.ndarray:
     bgr = cv2.cvtColor(np.uint8(mask).reshape(-1, 1, 3), cv2.COLOR_HSV2BGR)
     return bgr.reshape(-1, 3)
 
-# Extract dominant color from list of torso crops
-def get_dominant_jersey_color_from_list(crops: list) -> tuple:
-    all_pixels = []
+def get_dominant_color(image, k=1):
+    """Extract dominant jersey color using HSV filtering + KMeans"""
+    keypoints = get_keypoints(image)
+    if not keypoints:
+        filtered = filter_jersey_pixels(image)
+        if len(filtered) == 0:
+            return [0, 0, 0]
+        kmeans = KMeans(n_clusters=k, n_init='auto').fit(filtered)
+        return tuple(kmeans.cluster_centers_[0].astype(int))
 
-    for crop in crops:
-        if crop is None or crop.size == 0:
-            continue
+    torso_mask = create_torso_mask(image.shape, keypoints)
+    masked = cv2.bitwise_and(image, image, mask=torso_mask)
+    filtered = filter_jersey_pixels(masked)
 
-        filtered = filter_jersey_pixels(crop)
-        if filtered.shape[0] > 0:
-            all_pixels.append(filtered)
+    if len(filtered) == 0:
+        return [0, 0, 0]
 
-    if not all_pixels:
-        return (0, 0, 0)  # fallback
+    kmeans = KMeans(n_clusters=k, n_init='auto').fit(filtered)
+    return tuple(kmeans.cluster_centers_[0].astype(int))
 
-    all_pixels = np.concatenate(all_pixels, axis=0)
-    kmeans = KMeans(n_clusters=1, random_state=42).fit(all_pixels)
-    dominant_color = kmeans.cluster_centers_[0].astype(int)
-    return tuple(dominant_color)
-
-# Main processing function
 def main_multi_frame(results_tracking):
     player_crops = []
     frame_refs = []
@@ -641,25 +678,25 @@ def main_multi_frame(results_tracking):
 
     print("=== Step 2: Clustering ===")
 
-    # Step 1: Collect torso crops
+    # Step 1: Collect torso crops using pose-based masking
     for frame_idx, (frame, _, player_boxes) in enumerate(results_tracking):
         for box in player_boxes:
             x1, y1 = map(int, box.points[0])
             x2, y2 = map(int, box.points[1])
             if x2 > x1 and y2 > y1:
-                h = y2 - y1
-                torso_crop = frame[y1 + int(h * 0.15): y1 + int(h * 0.55), x1:x2]  # upper torso
-                if torso_crop.size == 0:
+                crop = frame[y1:y2, x1:x2]
+                if crop.size == 0 or crop.shape[0] < 20 or crop.shape[1] < 20:
                     continue
-                if torso_crop.shape[0] > 10 and torso_crop.shape[1] > 10:
-                    player_crops.append(torso_crop)
-                    frame_refs.append(frame_idx)
-                    boxes_refs.append((x1, y1, x2, y2))
+
+                # Use full body crop for feature extraction
+                player_crops.append(crop)
+                frame_refs.append(frame_idx)
+                boxes_refs.append((x1, y1, x2, y2))
 
     assert len(player_crops) > 0, "No valid player crops found."
     print(f"Collected {len(player_crops)} valid player crops.")
 
-    # Step 2: Extract features
+    # Step 2: Feature Extraction
     features = []
     for idx, img in enumerate(player_crops):
         try:
@@ -689,15 +726,15 @@ def main_multi_frame(results_tracking):
                 new_boxes.append([x1, y1, x2, y2, class_id])
         results_with_class_ids.append((frame, [], new_boxes))
 
-    # Step 5: Estimate team colors from clusters
+    # Step 5: Estimate team colors using pose-aware jersey extraction
     team1_indices = [i for i, c in enumerate(cluster_labels) if c == 0]
     team2_indices = [i for i, c in enumerate(cluster_labels) if c == 1]
 
     team1_crops = [player_crops[i] for i in team1_indices]
     team2_crops = [player_crops[i] for i in team2_indices]
 
-    team1_color = get_dominant_jersey_color_from_list(team1_crops)
-    team2_color = get_dominant_jersey_color_from_list(team2_crops)
+    team1_color = get_dominant_color(cv2.vconcat(team1_crops)) if team1_crops else (0, 0, 0)
+    team2_color = get_dominant_color(cv2.vconcat(team2_crops)) if team2_crops else (0, 0, 0)
 
     print(f"Team 1 dominant color: {team1_color}")
     print(f"Team 2 dominant color: {team2_color}")
