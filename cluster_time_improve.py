@@ -553,111 +553,11 @@
 #     print("Team 2 Color (BGR):", team2_color)
 #////////////////////////// nemo
 
-from torchvision import models, transforms
-import torch
-import numpy as np
-from sklearn.cluster import KMeans
-from PIL import Image
-import cv2
-
-# Setup model for feature extraction
-model = models.resnet18(pretrained=True)
-model = torch.nn.Sequential(*list(model.children())[:-1])  # remove classification head
-model.eval()
-
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406],
-                         [0.229, 0.224, 0.225])
-])
-
-def extract_features(image):
-    if isinstance(image, np.ndarray):
-        # Convert BGR (OpenCV) to RGB
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = Image.fromarray(image)
-
-    with torch.no_grad():
-        image = transform(image).unsqueeze(0)
-        features = model(image).squeeze().numpy()
-    return features
-
-def get_dominant_color_batch(images, n_samples=10):
-    """Estimate dominant color from a batch of player crops"""
-    dominant_colors = []
-
-    for img in images[:n_samples]:
-        if isinstance(img, np.ndarray):
-            image = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-        else:
-            image = img
-
-        # Focus on center part
-        w, h = image.size
-        left = int(w * 0.2)
-        right = int(w * 0.8)
-        top = int(h * 0.3)
-        bottom = int(h * 0.7)
-        image = image.crop((left, top, right, bottom))
-        image = image.resize((30, 30))
-
-        # Convert to NumPy array
-        np_img = np.array(image).reshape(-1, 3)
-
-        # Remove very dark/light/greenish pixels
-        mask = (
-            (np_img[:, 0] > 40) & (np_img[:, 1] > 40) & (np_img[:, 2] > 40) &  # Not too dark
-            (np_img[:, 0] < 220) & (np_img[:, 1] < 220) & (np_img[:, 2] < 220) &  # Not too bright
-            ~((np_img[:, 1] > np_img[:, 0] + 20) & (np_img[:, 1] > np_img[:, 2] + 20))  # Not green
-        )
-
-        filtered = np_img[mask]
-        if len(filtered) == 0:
-            filtered = np_img  # fallback
-
-        kmeans = KMeans(n_clusters=1, n_init="auto")
-        kmeans.fit(filtered)
-        dominant_colors.append(kmeans.cluster_centers_[0])
-
-    # Average over all dominant colors
-    mean_color = np.mean(dominant_colors, axis=0)
-    return tuple(mean_color.astype(int))
-
-import numpy as np
-from PIL import Image
-from sklearn.cluster import KMeans
-from torchvision import models, transforms
-import torch
-import cv2
-
-# Load pre-trained model for feature extraction
-model = models.resnet18(pretrained=True)
-model = torch.nn.Sequential(*list(model.children())[:-1])
-model.eval()
-
-# Image transform
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], 
-                         [0.229, 0.224, 0.225])
-])
-
-def extract_features(image):
-    if isinstance(image, np.ndarray):
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = Image.fromarray(image)
-
-    image_tensor = transform(image).unsqueeze(0)
-    with torch.no_grad():
-        features = model(image_tensor).squeeze().numpy()
-    return features
-
 import cv2
 import numpy as np
 from sklearn.cluster import KMeans
 
+# Filter non-jersey pixels based on HSV thresholds
 def filter_jersey_pixels(img: np.ndarray) -> np.ndarray:
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     mask = []
@@ -665,78 +565,64 @@ def filter_jersey_pixels(img: np.ndarray) -> np.ndarray:
     for pixel in hsv.reshape(-1, 3):
         h, s, v = pixel
 
-        # Remove grass
+        # Remove grass (green)
         if 35 <= h <= 85 and s > 60 and v > 60:
             continue
-        # Remove skin
+        # Remove skin-like tones
         if 0 <= h <= 25 and 30 < s < 180 and v > 50:
             continue
-        # Remove dull
+        # Remove dull/gray pixels
         if s < 50 or v < 50:
             continue
 
         mask.append(pixel)
 
     if len(mask) == 0:
-        return img.reshape(-1, 3)  # fallback
+        return img.reshape(-1, 3)  # fallback if all are masked
 
     bgr = cv2.cvtColor(np.uint8(mask).reshape(-1, 1, 3), cv2.COLOR_HSV2BGR)
     return bgr.reshape(-1, 3)
 
-
-import cv2
-import numpy as np
-from sklearn.cluster import KMeans
-
-import cv2
-import numpy as np
-
+# Extract dominant color from list of torso crops
 def get_dominant_jersey_color_from_list(crops: list) -> tuple:
-    """
-    Computes the average dominant color from a list of torso crops,
-    excluding background-like hues (grass, skin tones).
-    """
     all_pixels = []
 
     for crop in crops:
         if crop is None or crop.size == 0:
             continue
 
-        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
-        # Mask out green (grass) and skin tones
-        grass_mask = cv2.inRange(hsv, (35, 40, 40), (85, 255, 255))  # green
-        skin_mask = cv2.inRange(hsv, (0, 40, 40), (20, 255, 255))    # skin
-        mask = cv2.bitwise_not(cv2.bitwise_or(grass_mask, skin_mask))
-        pixels = crop[mask > 0]
-        if len(pixels) > 0:
-            all_pixels.append(pixels)
+        filtered = filter_jersey_pixels(crop)
+        if filtered.shape[0] > 0:
+            all_pixels.append(filtered)
 
     if not all_pixels:
-        return (0, 0, 0)
+        return (0, 0, 0)  # fallback
 
     all_pixels = np.concatenate(all_pixels, axis=0)
     kmeans = KMeans(n_clusters=1, random_state=42).fit(all_pixels)
     dominant_color = kmeans.cluster_centers_[0].astype(int)
     return tuple(dominant_color)
 
+# Main processing function
 def main_multi_frame(results_tracking):
     player_crops = []
     frame_refs = []
     boxes_refs = []
 
     print("=== Step 2: Clustering ===")
-    
-    # Step 1: Collect player crops
+
+    # Step 1: Collect torso crops
     for frame_idx, (frame, _, player_boxes) in enumerate(results_tracking):
         for box in player_boxes:
             x1, y1 = map(int, box.points[0])
             x2, y2 = map(int, box.points[1])
             if x2 > x1 and y2 > y1:
                 h = y2 - y1
-                torso_crop = frame[y1 + int(h * 0.15): y1 + int(h * 0.55), x1:x2]  # top-center section
-                if torso_crop.size == 0: continue  # avoid blank crops
-                player_crops.append(torso_crop)
+                torso_crop = frame[y1 + int(h * 0.15): y1 + int(h * 0.55), x1:x2]  # upper torso
+                if torso_crop.size == 0:
+                    continue
                 if torso_crop.shape[0] > 10 and torso_crop.shape[1] > 10:
+                    player_crops.append(torso_crop)
                     frame_refs.append(frame_idx)
                     boxes_refs.append((x1, y1, x2, y2))
 
@@ -755,15 +641,13 @@ def main_multi_frame(results_tracking):
     features = np.array(features)
     print("Feature shape:", features.shape)
 
-    # Step 3: Clustering with KMeans
+    # Step 3: Clustering
     kmeans = KMeans(n_clusters=2, random_state=42, n_init='auto')
     cluster_labels = kmeans.fit_predict(features)
     print("Cluster label distribution:", np.bincount(cluster_labels))
 
-    # Prepare results_with_class_ids
+    # Step 4: Assign class IDs
     results_with_class_ids = []
-    crop_index = 0
-
     for frame_idx, (frame, _, player_boxes) in enumerate(results_tracking):
         new_boxes = []
         for box in player_boxes:
@@ -775,20 +659,17 @@ def main_multi_frame(results_tracking):
                 new_boxes.append([x1, y1, x2, y2, class_id])
         results_with_class_ids.append((frame, [], new_boxes))
 
-    # Step 4: Extract one crop from each cluster to estimate team color
+    # Step 5: Estimate team colors from clusters
     team1_indices = [i for i, c in enumerate(cluster_labels) if c == 0]
     team2_indices = [i for i, c in enumerate(cluster_labels) if c == 1]
 
     team1_crops = [player_crops[i] for i in team1_indices]
     team2_crops = [player_crops[i] for i in team2_indices]
 
-    # Get dominant color using the improved method
     team1_color = get_dominant_jersey_color_from_list(team1_crops)
     team2_color = get_dominant_jersey_color_from_list(team2_crops)
-
 
     print(f"Team 1 dominant color: {team1_color}")
     print(f"Team 2 dominant color: {team2_color}")
 
     return results_with_class_ids, team1_color, team2_color
-
