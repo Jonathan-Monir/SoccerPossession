@@ -654,60 +654,64 @@ def extract_features(image):
         features = model(image_tensor).squeeze().numpy()
     return features
 
+import cv2
+import numpy as np
+from sklearn.cluster import KMeans
+
+def filter_jersey_pixels(img: np.ndarray) -> np.ndarray:
+    """
+    Filter pixels likely to be jersey by removing background-like HSV ranges.
+    """
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    mask = []
+
+    for pixel in hsv.reshape(-1, 3):
+        h, s, v = pixel
+
+        # Remove grass: green hues
+        if 35 <= h <= 85:
+            continue
+        # Remove skin tones: red/orange + moderate saturation
+        if 0 <= h <= 25 and 30 < s < 160:
+            continue
+        # Remove dull pixels
+        if s < 50 or v < 50:
+            continue
+
+        mask.append(pixel)
+
+    mask = np.array(mask, dtype=np.uint8)
+    if len(mask) == 0:
+        return img.reshape(-1, 3)  # fallback to original
+
+    # Convert back to BGR
+    mask_bgr = cv2.cvtColor(mask.reshape(-1, 1, 3), cv2.COLOR_HSV2BGR)
+    return mask_bgr.reshape(-1, 3)
 
 import cv2
 import numpy as np
 from sklearn.cluster import KMeans
 
-def get_dominant_jersey_color(crop: np.ndarray, upper_ratio: float = 0.5) -> tuple:
+def get_dominant_jersey_color(crops: list[np.ndarray]) -> tuple:
     """
-    Estimate the dominant jersey color using HSV filtering to remove grass/skin/background.
-
-    Args:
-        crop (np.ndarray): BGR player crop (H, W, 3)
-        upper_ratio (float): Proportion of crop height to consider (focus on upper body)
-
-    Returns:
-        tuple: (R, G, B) dominant jersey color
+    Given list of BGR crops, return dominant jersey color (R, G, B).
     """
-    # Crop top part of player
-    h, w, _ = crop.shape
-    crop = crop[:int(h * upper_ratio), :, :]  # top half (likely jersey)
+    all_pixels = []
 
-    # Convert to HSV
-    hsv_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    for crop in crops:
+        h, w, _ = crop.shape
+        jersey_area = crop[:int(h * 0.4), :, :]  # Top 40%
+        filtered_pixels = filter_jersey_pixels(jersey_area)
+        all_pixels.append(filtered_pixels)
 
-    # Flatten
-    hsv_flat = hsv_crop.reshape(-1, 3)
+    all_pixels = np.vstack(all_pixels)
 
-    # Filter out low saturation (gray/white/black), grass greens, and skin tones
-    mask = []
-    for h_val, s_val, v_val in hsv_flat:
-        # Ignore low saturation (not colorful)
-        if s_val < 50 or v_val < 50:
-            continue
-        # Ignore green grass (Hue 35–85)
-        if 35 <= h_val <= 85:
-            continue
-        # Ignore skin tones (Hue 0–25 and moderate sat)
-        if 0 <= h_val <= 25 and 30 < s_val < 150:
-            continue
-        mask.append((h_val, s_val, v_val))
-
-    # If too many were filtered, fall back to original HSV
-    if len(mask) < 10:
-        mask = hsv_flat
-
-    # Convert back to BGR for color clustering
-    hsv_masked = np.uint8(mask).reshape(-1, 1, 3)
-    bgr_pixels = cv2.cvtColor(hsv_masked, cv2.COLOR_HSV2BGR).reshape(-1, 3)
-
-    # KMeans clustering
+    # Cluster
     kmeans = KMeans(n_clusters=1, n_init='auto')
-    kmeans.fit(bgr_pixels)
+    kmeans.fit(all_pixels)
     dom_color = kmeans.cluster_centers_[0]
-
     return tuple(map(int, dom_color))
+
 
 def main_multi_frame(results_tracking):
     player_crops = []
@@ -767,11 +771,12 @@ def main_multi_frame(results_tracking):
     
     assert len(team1_idx) > 0 and len(team2_idx) > 0, "One of the clusters is empty."
 
-    team1_crop = player_crops[team1_idx[0]]
-    team2_crop = player_crops[team2_idx[0]]
+    # Group crops by cluster
+    team1_crops = [player_crops[i] for i in range(len(player_crops)) if cluster_labels[i] == 0]
+    team2_crops = [player_crops[i] for i in range(len(player_crops)) if cluster_labels[i] == 1]
 
-    team1_color = get_dominant_jersey_color(team1_crop)
-    team2_color = get_dominant_jersey_color(team2_crop)
+    team1_color = get_dominant_jersey_color(team1_crops)
+    team2_color = get_dominant_jersey_color(team2_crops)
 
     print(f"Team 1 dominant color: {team1_color}")
     print(f"Team 2 dominant color: {team2_color}")
