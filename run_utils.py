@@ -1,7 +1,6 @@
 import PIL
 from typing import List
 from tracking.soccer import Player, Team
-from tracking.soccer.draw import Draw
 
 import norfair
 import numpy as np
@@ -29,7 +28,6 @@ class Ball:
     def set_color(self, match: "Match"):
         """
         Sets the color of the ball to the team color with the ball possession in the match.
-def draw_bounding_boxes_on_frames(results_with_class_ids, team1_color, team2_color, team_poss_list):
 
         Parameters
         ----------
@@ -953,9 +951,7 @@ def get_detections(yolov11_detector, frame: np.ndarray, class_id: int, confidenc
     List[norfair.Detection]
         List of detections for the specified class.
     """
-    h, w = frame.shape[:2]
-    imgsz = max(h, w)
-    results = yolov11_detector.predict(frame, imgsz=imgsz)
+    results = yolov11_detector.predict(frame, imgsz = 1024)
     detections = []
     for result in results:
         # Filter boxes by class ID and confidence threshold
@@ -1086,5 +1082,3 @@ def get_main_ball(detections: List[Detection], match: Match = None) -> Ball:
         ball.detection = detections[0]
 
     return ball
-
-

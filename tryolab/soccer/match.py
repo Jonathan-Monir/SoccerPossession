@@ -386,7 +386,6 @@ class Match:
 
         return frame
 
-
     def get_possession_background(
         self,
     ) -> PIL.Image.Image:

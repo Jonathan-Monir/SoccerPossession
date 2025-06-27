@@ -2,7 +2,7 @@ import cv2
 import norfair
 import numpy as np
 
-from tracking.soccer.draw import Draw
+from soccer.draw import Draw
 
 
 class Ball:

@@ -1,3 +1,5 @@
+import os
+import tempfile
 import cv2
 import numpy as np
 import random
@@ -62,17 +64,6 @@ class BallTracker:
                     self.trail_thickness
                 )
 
-            # Draw arrow from last position to current position
-            if len(self.previous_positions) >= 2:
-                cv2.arrowedLine(
-                    frame,
-                    self.previous_positions[-2],  # Start from second-to-last position
-                    self.previous_positions[-1],  # Point to last position
-                    (0, 0, 255),  # Red color for arrow
-                    3,
-                    tipLength=0.3
-                )
-
         # Draw current ball position (ensure coordinates are integers)
         cv2.circle(frame, current_position, 5, (0, 255, 255), -1)  # Yellow circle
 
@@ -103,6 +94,8 @@ def draw_bounding_boxes_on_frames(results_with_class_ids, team1_color, team2_col
     
     processed_frames = []
     
+    # print(f"len poss{team_poss_list}")
+    # print(f"len res{results_with_class_ids}")
     for i, (frame, ball_detections, updated_boxes) in enumerate(results_with_class_ids):
         # Ensure frame is in OpenCV format (NumPy array)
         if not isinstance(frame, np.ndarray):
@@ -155,3 +148,71 @@ def save_video_from_frames(results_with_class_ids, output_path="output.mp4", fps
 
     out.release()
     print(f"Video saved as {output_path}")
+    with open(output_path, "rb") as video_file:
+        video_data = video_file.read()
+
+    return video_data
+
+
+# def get_video_from_frames(results_with_class_ids, fps=20):
+#     """Creates a video from processed frames and returns it as bytes."""
+#     if not results_with_class_ids:
+#         print("No frames to process!")
+#         return None
+
+#     first_frame = results_with_class_ids[0][0]
+#     height, width, _ = first_frame.shape
+
+#     # Create a temporary file in memory
+#     temp_file = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False)
+#     temp_path = temp_file.name
+#     temp_file.close()
+
+#     # Define codec and create VideoWriter object
+#     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+#     out = cv2.VideoWriter(temp_path, fourcc, fps, (width, height))
+
+#     for frame, _, _ in results_with_class_ids:
+#         out.write(frame)
+
+#     out.release()
+    
+#     # Read the temporary file into memory
+#     with open(temp_path, 'rb') as f:
+#         video_bytes = f.read()
+    
+#     # Clean up the temporary file
+#     os.unlink(temp_path)
+    
+#     print("Video processing complete")
+#     return video_bytes
+
+import imageio
+import numpy as np
+import io
+
+def get_video_from_frames(results_with_class_ids, fps=20):
+    """Creates a video from processed frames and returns it as bytes in memory."""
+    if not results_with_class_ids:
+        print("No frames to process!")
+        return None
+
+    first_frame = results_with_class_ids[0][0]
+    height, width, _ = first_frame.shape
+
+    # Create in-memory bytes buffer
+    video_bytes_io = io.BytesIO()
+
+    # Use imageio to write video frames directly to BytesIO
+    writer = imageio.get_writer(video_bytes_io, format='mp4', fps=fps)
+
+    for frame, _, _ in results_with_class_ids:
+        writer.append_data(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))  # convert BGR to RGB for imageio
+
+    writer.close()
+
+    # Move to the start of the buffer
+    video_bytes_io.seek(0)
+
+    print("Video processing complete (in-memory)")
+    return video_bytes_io.getvalue()

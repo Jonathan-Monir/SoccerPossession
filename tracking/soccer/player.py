@@ -5,9 +5,9 @@ import numpy as np
 import PIL
 from norfair import Detection
 
-from ..soccer.ball import Ball
-from ..soccer.draw import Draw
-from ..soccer.team import Team
+from soccer.ball import Ball
+from soccer.draw import Draw
+from soccer.team import Team
 
 
 class Player:
@@ -26,7 +26,8 @@ class Player:
         self.team = None
 
         if detection:
-            self.team = detection.label
+            if "team" in detection.data:
+                self.team = detection.data["team"]
 
     def get_left_foot(self, points: np.array):
         x1, y1 = points[0]
@@ -147,7 +148,7 @@ class Player:
         return self.right_foot_abs
 
     def draw(
-            self, frame, confidence, id, teams
+        self, frame: PIL.Image.Image, confidence: bool = False, id: bool = False
     ) -> PIL.Image.Image:
         """
         Draw the player on the frame
@@ -169,15 +170,8 @@ class Player:
         if self.detection is None:
             return frame
 
-        if self.detection.label == 1:
-            self.color = teams[0].color
-        else: 
-            self.color = teams[1].color
-
         if self.team is not None:
-            self.detection.data["color"] = self.color
-
-            
+            self.detection.data["color"] = self.team.color
 
         return Draw.draw_detection(self.detection, frame, confidence=confidence, id=id)
 
@@ -246,7 +240,6 @@ class Player:
         frame: PIL.Image.Image,
         confidence: bool = False,
         id: bool = False,
-        teams=False
     ) -> PIL.Image.Image:
         """
         Draw all players on the frame
@@ -268,7 +261,7 @@ class Player:
             Frame with players drawn
         """
         for player in players:
-            frame = player.draw(frame, confidence=confidence, id=id, teams=teams)
+            frame = player.draw(frame, confidence=confidence, id=id)
 
         return frame
 

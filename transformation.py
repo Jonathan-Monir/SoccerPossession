@@ -1,5 +1,4 @@
 import cv2
-import os
 import torch
 import yaml
 import numpy as np
@@ -75,16 +74,7 @@ class CameraCalibrator:
     """
     Loads the camera calibration models and computes the projection matrix.
     """
-    
-
     def __init__(self, cfg_path, cfg_line_path, kp_model_path, line_model_path):
-        # Adjust paths for Kaggle environment
-        cfg_path = '/kaggle/working/SoccerPossession/' + cfg_path
-        cfg_line_path = '/kaggle/working/SoccerPossession/' + cfg_line_path
-        kp_model_path = '/kaggle/input/' + kp_model_path
-        line_model_path = '/kaggle/input/' + line_model_path
-
-        # Load configuration and models
         self.cfg = yaml.safe_load(open(cfg_path, 'r'))
         self.cfg_l = yaml.safe_load(open(cfg_line_path, 'r'))
 
@@ -156,9 +146,9 @@ def process_field_transformation(precomputed_results, calibrator_cfgs):
 
         frame_result = {
             "frame_index": frame_idx,
+            "players": players_with_field,
             "ball": {"class_id": 0, "field_position": list(ball_field_position)}
-                    if ball_field_position is not None else None,
-            "players": players_with_field
+                    if ball_field_position is not None else None
         }
         output_results.append(frame_result)
     return output_results

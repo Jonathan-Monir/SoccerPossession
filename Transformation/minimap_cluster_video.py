@@ -4,7 +4,7 @@ import yaml
 import numpy as np
 import torchvision.transforms as T
 from ultralytics import YOLO
-import inference as inf
+import Transformation.inference as inf
 import argparse
 from sklearn.cluster import KMeans
 import torchvision.models as models
