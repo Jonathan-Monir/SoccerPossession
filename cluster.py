@@ -153,7 +153,7 @@ def apply_masking(crop):
     return masked_crop.reshape(-1,3)[np.any(masked_crop.reshape(-1,3)!=0, axis=1)]
 
 
-def extract_dominant_colors(crop, n_colors=3, debug=False):
+def extract_dominant_colors(crop, n_colors=3, debug=True):
     pixels = apply_masking(crop)
     if debug:
         print(f"Number of pixels after masking: {len(pixels)}")
