@@ -20,14 +20,10 @@ def CalculatePossession(
         ball = ValidateBall(ball)
         players = ValidatePlayers(players)
 
-        print(f"ball::: {ball}")
-        print(f"players::: {players}")
         # Handle ball continuity with type checks
         ball = HandleBallWithValidation(ball, prevBall, yardTL, yardTR, yardBL, yardTL[1])
 
 
-        print(f"ball with valid::: {ball}")
-        print(f"players with valid::: {players}")
 
         # Process possession only with valid data
         if ball and isinstance(ball, dict) and "field_position" in ball:
@@ -106,11 +102,6 @@ def HandleBallWithValidation(current_ball, prev_ball, tl, tr, bl, max_y):
     return None
 
 def IsInBounds(pos, tl, tr, bl, max_y):
-    print(f"pos: {pos}")
-    print(f"tl: {tl}")
-    print(f"tr: {tr}")
-    print(f"bl: {bl}")
-    print(f"my: {max_y}")
     """Safe coordinate validation"""
     try:
         return (

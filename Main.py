@@ -29,7 +29,7 @@ def measure_time(func, *args, process_name="Process"):
     return result
 
 # TRACKING
-results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\nemo.mp4", 20, 5, process_name="Tracking")
+results_tracking, motion_estimators, coord_transformations, video = measure_time(process_video, r"resources\yolo8.pt", r"resources\manc.mp4", 10, 400, process_name="Tracking")
 
 
 motion_estimators = 1
@@ -41,7 +41,6 @@ i = 0
 # Ensure team colors are in tuple format for OpenCV
 team1_color = tuple(map(int, team1_color))
 team2_color = tuple(map(int, team2_color))
-_, frames = vid(results_with_class_ids, team1_color=team1_color, team2_color=team2_color)
 
 
 
@@ -56,7 +55,9 @@ calibrator_cfgs = {
 }
 
 # FIELD TRANSFORMATION
-results = measure_time(process_field_transformation, results_with_class_ids, calibrator_cfgs, process_name="Field Transformation")
+results, results_with_class_ids = measure_time(process_field_transformation, results_with_class_ids, calibrator_cfgs, process_name="Field Transformation")
+
+_, frames = vid(results_with_class_ids, team1_color=team1_color, team2_color=team2_color)
 
 # for i, (frame,ball, player) in enumerate(results_tracking):
 #     if i <20:

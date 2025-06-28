@@ -21,10 +21,12 @@ def vid(results_with_class_ids, team1_color, team2_color, output_path="output_vi
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Use 'mp4v' for .mp4 files
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
-    for frame, ball_detections, player_detections in results_with_class_ids:
+    for frame_idx, (frame, ball_detections, player_detections) in enumerate(results_with_class_ids):
         # Draw player detections (List of lists: [class_id, x1, y1, x2, y2])
         for det in player_detections:
             class_id, x1, y1, x2, y2 = det
+            if class_id ==0 or class_id==3:
+                print(f"at frame idx: {frame_idx}, ball det is at: {x1,x2,y1,y2}, class_id: {class_id}")
             color = team1_color if class_id == 1 else team2_color
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 

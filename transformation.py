@@ -46,6 +46,7 @@ class FieldTransformer:
         self.H_inv = H_inv
         self.field_offset = field_offset
 
+
     def image_to_field_point(self, bbox):
         if bbox is None:
             return None
@@ -72,17 +73,17 @@ class FieldTransformer:
         return H
 
 class CameraCalibrator:
-    """
+    """<norfair.tracker.Detection object at 0x000001A2E7137740>
     Loads the camera calibration models and computes the projection matrix.
     """
     
 
     def __init__(self, cfg_path, cfg_line_path, kp_model_path, line_model_path):
-        # Adjust paths for Kaggle environment
-        cfg_path = '/kaggle/working/SoccerPossession/' + cfg_path
-        cfg_line_path = '/kaggle/working/SoccerPossession/' + cfg_line_path
-        kp_model_path = '/kaggle/input/' + kp_model_path
-        line_model_path = '/kaggle/input/' + line_model_path
+#         # Adjust paths for Kaggle environment
+#         cfg_path = '/kaggle/working/SoccerPossession/' + cfg_path
+#         cfg_line_path = '/kaggle/working/SoccerPossession/' + cfg_line_path
+#         kp_model_path = '/kaggle/input/' + kp_model_path
+#         line_model_path = '/kaggle/input/' + line_model_path
 
         # Load configuration and models
         self.cfg = yaml.safe_load(open(cfg_path, 'r'))
@@ -103,65 +104,93 @@ class CameraCalibrator:
         P = inf.projection_from_cam_params(final_params_dict)
         return P
 
+def is_inside_field(point,bbox=0,frame_idx=0):
+    """
+    Returns True if the (X,Y) point lies within the standard 105×68 field.
+    """
+    X, Y = point
+    inside = (0.0 <= X <= 90.0) and (0.0 <= Y <= 68.0)
+    print(f"Ball is inside, {bbox}, frame_idx={frame_idx}, point: {point}" if inside else f"Ball is outside, {bbox}, frame_idx={frame_idx}, point: {point}")
+    return inside
+
 def process_field_transformation(precomputed_results, calibrator_cfgs):
     """
-    precomputed_results: list of tuples
-       Each tuple is (frame_image, <ignored>, detections)
-       Each detection is a list:
-         [class_id, x_min, y_min, x_max, y_max]
-         where class_id is 0 for ball and 1 or 2 for player teams.
-         
-    calibrator_cfgs: dictionary containing the paths and thresholds for calibration.
+    precomputed_results: list of (frame_image, meta, detections)
+       detections is a list of [class_id, x_min, y_min, x_max, y_max].
+    calibrator_cfgs: dict with "cfg_path", "cfg_line_path", "kp_model_path",
+                     "line_model_path", "kp_threshold", "line_threshold".
+    Returns:
+      - output_results: list of dicts with frame_index, ball & players field coords
+      - filtered_precomputed: same structure as precomputed_results but
+                              with out-of-bounds balls stripped.
     """
-    # Use the first frame for calibration.
+    # --- Calibrate on first frame ---
     first_frame = precomputed_results[0][0]
-    frame_height, frame_width = first_frame.shape[:2]
-    
-    # Setup calibration.
-    cam = inf.FramebyFrameCalib(iwidth=frame_width, iheight=frame_height, denormalize=True)
-    calibrator = CameraCalibrator(calibrator_cfgs["cfg_path"],
-                                  calibrator_cfgs["cfg_line_path"],
-                                  calibrator_cfgs["kp_model_path"],
-                                  calibrator_cfgs["line_model_path"])
-    kp_threshold = calibrator_cfgs["kp_threshold"]
-    line_threshold = calibrator_cfgs["line_threshold"]
-
-    # Calibrate using the first frame.
-    P = calibrator.calibrate(first_frame, cam, kp_threshold, line_threshold)
+    h, w = first_frame.shape[:2]
+    cam = inf.FramebyFrameCalib(iwidth=w, iheight=h, denormalize=True)
+    calibrator = CameraCalibrator(
+        calibrator_cfgs["cfg_path"],
+        calibrator_cfgs["cfg_line_path"],
+        calibrator_cfgs["kp_model_path"],
+        calibrator_cfgs["line_model_path"]
+    )
+    P = calibrator.calibrate(
+        first_frame, cam,
+        calibrator_cfgs["kp_threshold"],
+        calibrator_cfgs["line_threshold"]
+    )
     H = FieldTransformer.compute_homography(P)
     H_inv = np.linalg.inv(H)
     transformer = FieldTransformer(H_inv)
 
     output_results = []
-    # Process each frame.
-    for frame_idx, (frame, _, detections) in enumerate(precomputed_results):
+    filtered_precomputed = []
+
+    # --- Process each frame ---
+    for frame_idx, (frame, meta, detections) in enumerate(precomputed_results):
         players_with_field = []
         ball_field_position = None
+        kept_detections = []
 
-        for detection in detections:
-            # detection: [class_id, x_min, y_min, x_max, y_max]
-            class_id = int(detection[0])
-            bbox = [float(coord) for coord in detection[1:]]  # [x_min, y_min, x_max, y_max]
-            if class_id in [1, 2]:  # players (already classified)
-                field_pos = transformer.image_to_field_point(bbox)
-                if field_pos:
-                    players_with_field.append({
-                        "class_id": class_id,
-                        "field_position": list(field_pos)
-                    })
-            elif class_id == 0:  # ball detection
-                field_pos = transformer.image_to_field_point(bbox)
-                if field_pos:
+        for det in detections:
+            class_id = int(det[0])
+            bbox = [float(x) for x in det[1:]]
+            field_pos = transformer.image_to_field_point(bbox)
+            if field_pos is None:
+                continue  # skip if projection failed
+
+            if class_id in (1, 2):
+                # Always keep player detections
+                players_with_field.append({
+                    "class_id": class_id,
+                    "field_position": list(field_pos)
+                })
+                kept_detections.append(det)
+
+            else:  # class_id == 0 → ball
+                if not(is_inside_field(field_pos,bbox, frame_idx)):
+                    det[0]=3
+                if is_inside_field(field_pos,bbox):
                     ball_field_position = field_pos
+                    kept_detections.append(det)
+                    print(f"field pos: {field_pos}")
 
-        frame_result = {
+
+                    
+        # Build the JSON-serializable result for this frame
+        output_results.append({
             "frame_index": frame_idx,
-            "ball": {"class_id": 0, "field_position": list(ball_field_position)}
-                    if ball_field_position is not None else None,
+            "ball": {
+                "class_id": 0,
+                "field_position": list(ball_field_position)
+            } if ball_field_position is not None else None,
             "players": players_with_field
-        }
-        output_results.append(frame_result)
-    return output_results
+        })
+
+        # Save a filtered version of your original tuple
+        filtered_precomputed.append((frame, meta, kept_detections))
+
+    return output_results, filtered_precomputed
 
 def main():
     # Example: load your precomputed results from another module or file.

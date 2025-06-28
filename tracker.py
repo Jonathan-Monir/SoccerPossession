@@ -135,6 +135,8 @@ def process_video(yolo_path, video_path, target_fps, last_frame):
 
         if not(ball_tracks):
             ball_tracks = ball_detections
+        if not(player_tracks):
+            player_tracks = player_detections
 
         # Append to results
         results.append((frame, ball_tracks, player_tracks))
