@@ -301,7 +301,7 @@ async def processVideo(
         }
 
         # FIELD TRANSFORMATION
-        results = measure_time(process_field_transformation, results_with_class_ids, calibrator_cfgs, process_name="Field Transformation")
+        results, results_with_class_ids = measure_time(process_field_transformation, results_with_class_ids, calibrator_cfgs, process_name="Field Transformation")
         print("FINISHING FIELD TRANSFORMATION")
         # POSSESSION CALCULATION
         yardTL, yardTR, yardBL, yardBR = [29.0, 17.0], [45.5, 17.0], [29.0, 26.0], [45.5, 26.0]
