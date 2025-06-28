@@ -315,7 +315,7 @@ def multi_frame_cluster(results, model=None, norfair=False):
             new_player_detections[frame_idx].append(new_box)
         
         final_results = []
-        for idx, (frame, ball_detections, _) in enumerate(results):
+        for idx, (frame, ball_detections, ren) in enumerate(results):
             updated_boxes = new_player_detections.get(idx, []) + ball_detections
             cleaned_boxes = []
             for box in updated_boxes:
@@ -365,7 +365,10 @@ def extract_player_colors(image, detections, norfair=True):
 
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
+    if detections is None:
+        print("detections not none")
     for det in detections:
+
 
         if norfair and hasattr(det, 'points'):
             # Norfair Detection object
@@ -398,17 +401,13 @@ def extract_player_colors(image, detections, norfair=True):
         x1, x2 = max(0, x1), min(image.shape[1], x2)
         y1, y2 = max(0, y1), min(image.shape[0], y2)
 
-        if cls in range(1, 6):  # Players only
-            crop = image_rgb[y1:y2, x1:x2]
+        crop = image_rgb[y1:y2, x1:x2]
 
-            if crop.size == 0:
-                print(f"Skipped zero-size crop for box: {x1},{y1},{x2},{y2}")
-                continue
-            dominant_colors = extract_dominant_colors(crop)
-            player_colors.append((dominant_colors, (cls, x1, y1, x2, y2)))
-
-        else:
-            other_boxes.append((cls, x1, y1, x2, y2))
+        if crop.size == 0:
+            print(f"Skipped zero-size crop for box: {x1},{y1},{x2},{y2}")
+            continue
+        dominant_colors = extract_dominant_colors(crop)
+        player_colors.append((dominant_colors, (cls, x1, y1, x2, y2)))
 
     return player_colors, other_boxes
 

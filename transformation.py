@@ -146,7 +146,12 @@ def process_field_transformation(precomputed_results, calibrator_cfgs):
     output_results = []
     filtered_precomputed = []
 
+    cntt=0
     # --- Process each frame ---
+#     for pre in precomputed_results:
+#         print(cntt)
+#         print(pre)
+#         cntt+=1
     for frame_idx, (frame, meta, detections) in enumerate(precomputed_results):
         players_with_field = []
         ball_field_position = None
