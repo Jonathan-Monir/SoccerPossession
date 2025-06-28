@@ -84,7 +84,6 @@ def sanitize_color(color):
 def draw_bounding_boxes_on_frames(results_with_class_ids, team1_color, team2_color, team_poss_list):
     """Draw bounding boxes on frames using OpenCV with ball tracking."""
     class_id_colors = {}  # Store unique colors for each class ID
-
     # Initialize ball tracker
     ball_tracker = BallTracker(
         max_history=20, 
@@ -103,20 +102,22 @@ def draw_bounding_boxes_on_frames(results_with_class_ids, team1_color, team2_col
             
         # Draw ball trajectory (using only YOLO detections)
         if ball_detections:
-            frame = ball_tracker.update_tracking(frame, ball_detections,team1_color, team2_color,team_poss_list[i])
+            frame = ball_tracker.update_tracking(frame, ball_detections, team1_color, team2_color, team_poss_list[i])
         
         # Draw bounding boxes for objects (players, etc.)
         for box in updated_boxes:
             class_id, x1, y1, x2, y2 = box
-            # Use provided team colors for player boxes.
+            
+            # Use provided team colors for player boxes and convert to BGR format
             if class_id == 1:
                 color = sanitize_color(team1_color)
+                color = (int(color[2]), int(color[1]), int(color[0]))  # Convert to BGR
             elif class_id == 2:
                 color = sanitize_color(team2_color)
+                color = (int(color[2]), int(color[1]), int(color[0]))  # Convert to BGR
             else:
-                continue
+                continue  # Skip if not a recognized team class
             
-            color = (int(color[2]), int(color[1]), int(color[0]))
             # Draw the rectangle using the determined color
             cv2.rectangle(
                 frame, 
