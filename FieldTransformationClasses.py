@@ -1,3 +1,4 @@
+import numpy as np
 class FieldTransformer:
     """
     Handles the transformation from image coordinates to field (world) coordinates.
